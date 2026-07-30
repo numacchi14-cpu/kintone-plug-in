@@ -1,0 +1,23 @@
+{
+  "manifest_version": 1,
+  "version": "0.7.0",
+  "type": "APP",
+  "name": {
+    "ja": "Excel帳票出力",
+    "en": "Excel Report Export"
+  },
+  "description": {
+    "ja": "複数のkintoneアプリからデータを取得し、Excelテンプレートへ書き込んで帳票を出力します。",
+    "en": "Exports Excel reports by writing kintone records into workbook templates."
+  },
+  "icon": "image/icon.png",
+  "config": {
+    "html": "html/config.html",
+    "js": ["js/config.js"],
+    "css": ["css/config.css"]
+  },
+  "desktop": {
+    "js": ["js/desktop.js"],
+    "css": ["css/desktop.css"]
+  }
+}

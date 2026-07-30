@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Excel帳票出力 設定</title>
+  </head>
+  <body>
+    <main class="krp-config">
+      <header class="krp-config__header">
+        <h1>Excel帳票出力 設定</h1>
+        <p>このアプリでの動作モードと、帳票プロトタイプ用のフィールド・取得元アプリを設定します。</p>
+      </header>
+
+      <details class="krp-panel krp-guide">
+        <summary>説明書を開く</summary>
+        <section class="krp-guide__section">
+          <h2>テンプレート管理アプリ</h2>
+          <p>フォームに次のフィールドを作成してから、プラグイン設定でモードを「テンプレート管理」にします。</p>
+          <table class="krp-table">
+            <thead>
+              <tr>
+                <th>フィールド名</th>
+                <th>フィールド種類</th>
+                <th>フィールドコード</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>帳票ID</td>
+                <td>文字列1行</td>
+                <td><code>report_id</code></td>
+              </tr>
+              <tr>
+                <td>帳票名</td>
+                <td>文字列1行</td>
+                <td><code>report_name</code></td>
+              </tr>
+              <tr>
+                <td>完成版テンプレート添付</td>
+                <td>添付ファイル</td>
+                <td><code>completed_template</code></td>
+              </tr>
+              <tr>
+                <td>取得元アプリ設定JSON</td>
+                <td>文字列複数行</td>
+                <td><code>sources_json</code></td>
+              </tr>
+            </tbody>
+          </table>
+          <ol class="krp-steps">
+            <li>テンプレート管理アプリでレコードを追加します。</li>
+            <li>帳票IDと帳票名を入力し、画面上部の「取得元アプリ設定JSONをかんたん作成」を開きます。</li>
+            <li>取得元アプリのアプリIDとExcelシート名を入力し、「フィールド一覧を取得」を押します。</li>
+            <li>出力するフィールドをチェックし、必要なら上下移動でExcelの列順を整えてJSONへ反映します。</li>
+            <li>抽出条件には対象店舗、対象期間、基準日、固定値を設定できます。日付がないアプリでは対象期間条件を追加しません。</li>
+            <li>最初は添付ファイルを空のままレコードを保存します。</li>
+            <li>レコード詳細画面の「初期Excelテンプレート作成」ボタンを押します。</li>
+            <li>ダウンロードされたExcelの集計シートを編集します。</li>
+            <li>編集済みExcelを同じレコードの完成版テンプレート添付に添付して保存します。</li>
+          </ol>
+        </section>
+
+        <section class="krp-guide__section">
+          <h2>帳票出力アプリ</h2>
+          <p>フォームに次のフィールドを作成してから、プラグイン設定でモードを「帳票出力」にします。</p>
+          <table class="krp-table">
+            <thead>
+              <tr>
+                <th>フィールド名</th>
+                <th>フィールド種類</th>
+                <th>フィールドコード</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>帳票種類</td>
+                <td>文字列1行、またはドロップダウン</td>
+                <td><code>report_type</code></td>
+              </tr>
+              <tr>
+                <td>対象店舗</td>
+                <td>文字列1行、またはドロップダウン</td>
+                <td><code>store</code></td>
+              </tr>
+              <tr>
+                <td>基準日</td>
+                <td>日付</td>
+                <td><code>base_date</code></td>
+              </tr>
+            </tbody>
+          </table>
+          <ol class="krp-steps">
+            <li>帳票出力アプリのプラグイン設定で、テンプレート管理アプリIDを入力します。</li>
+            <li>取得元アプリ設定JSONに、実データ取得元アプリのID、シート名、フィールドを設定します。</li>
+            <li>帳票出力アプリでレコードを追加します。</li>
+            <li>帳票種類には、テンプレート管理アプリの帳票IDと同じ値を入力します。</li>
+            <li>基準日は追加時に初期値が入ります。手入力または保存済みの値を出力時に優先します。</li>
+            <li>レコード詳細画面の「Excel帳票出力」ボタンを押します。</li>
+          </ol>
+        </section>
+
+        <section class="krp-guide__section">
+          <h2>つまずきやすい点</h2>
+          <ul class="krp-list">
+            <li>レコード追加画面で何も入力できない場合、フォームにフィールドがありません。</li>
+            <li>フォームを変更した後は、必ずアプリを更新してください。</li>
+            <li>帳票出力アプリの帳票種類と、テンプレート管理アプリの帳票IDは同じ値にしてください。</li>
+            <li>フィールドコードを変更した場合は、プラグイン設定画面のフィールドコードも同じ値にしてください。</li>
+            <li>APIトークンは使いません。ログインユーザー権限でkintone APIを実行します。</li>
+            <li>フィールド一覧を取得できない場合、アプリIDとログインユーザーのアプリ閲覧権限を確認してください。</li>
+            <li>テーブル、添付ファイル、関連レコード一覧など、現在の行出力に非対応のフィールドは一覧取り込み時に除外されます。</li>
+            <li>取得元アプリ設定JSONが未入力の場合は、プラグイン設定画面のJSONを使います。</li>
+          </ul>
+        </section>
+        <section class="krp-guide__section">
+          <h2>取得元アプリ設定JSON</h2>
+          <p>どのkintoneアプリから、どの列を、Excelのどのシートへ書くかを指定します。</p>
+          <pre class="krp-code">[
+  {
+    "key": "actual",
+    "label": "実績",
+    "appId": "99",
+    "sheetName": "日別計画実績",
+    "fields": [
+      { "code": "日付", "label": "日付", "type": "date" },
+      { "code": "店舗名", "label": "店舗名" },
+      { "code": "実績_総売上", "label": "実績_総売上", "type": "number" }
+    ],
+    "filters": [
+      { "field": "店舗名", "operator": "=", "valueFrom": "store", "valueType": "text" },
+      { "field": "日付", "operator": "between", "valueFrom": "dateRange", "valueType": "text", "dateRule": "monthStartToBaseDate" }
+    ],
+    "sorts": [
+      { "field": "日付", "order": "asc" }
+    ]
+  }
+]</pre>
+        </section>
+      </details>
+
+      <section class="krp-panel">
+        <h2>動作モード</h2>
+        <label class="krp-field">
+          <span>モード</span>
+          <select id="mode">
+            <option value="template">テンプレート管理</option>
+            <option value="output">帳票出力</option>
+          </select>
+        </label>
+      </section>
+
+      <section class="krp-panel">
+        <h2>テンプレート管理</h2>
+        <div class="krp-grid">
+          <label class="krp-field">
+            <span>帳票IDフィールドコード</span>
+            <input id="templateReportIdField" value="report_id" />
+          </label>
+          <label class="krp-field">
+            <span>帳票名フィールドコード</span>
+            <input id="templateReportNameField" value="report_name" />
+          </label>
+          <label class="krp-field">
+            <span>完成版テンプレート添付フィールドコード</span>
+            <input id="templateAttachmentField" value="completed_template" />
+          </label>
+          <label class="krp-field">
+            <span>取得元アプリ設定JSONフィールドコード</span>
+            <input id="templateSourcesJsonField" value="sources_json" />
+          </label>
+        </div>
+      </section>
+
+      <section class="krp-panel">
+        <h2>帳票出力</h2>
+        <div class="krp-grid">
+          <label class="krp-field">
+            <span>テンプレート管理アプリID</span>
+            <input id="templateAppId" inputmode="numeric" placeholder="例: 123" />
+          </label>
+          <label class="krp-field">
+            <span>帳票種類フィールドコード</span>
+            <input id="outputReportIdField" value="report_type" />
+          </label>
+          <label class="krp-field">
+            <span>対象店舗フィールドコード</span>
+            <input id="outputStoreField" value="store" />
+          </label>
+          <label class="krp-field">
+            <span>基準日フィールドコード</span>
+            <input id="outputBaseDateField" value="base_date" />
+          </label>
+          <label class="krp-field">
+            <span>基準日の初期値ルール</span>
+            <select id="baseDateRule">
+              <option value="firstDayUsesYesterday">毎月1日は昨日にする</option>
+              <option value="today">今日を使う</option>
+              <option value="yesterday">常に昨日にする</option>
+              <option value="manual">手入力のみ</option>
+            </select>
+            <small>入力済みの基準日は上書きしません。レコード画面の「基準日を自動設定」で明示的に再設定できます。</small>
+          </label>
+        </div>
+      </section>
+
+      <section class="krp-panel">
+        <h2>取得元アプリ設定 JSON</h2>
+        <p class="krp-note">テンプレート管理レコード側のJSONが未入力の場合に使う共通の既定値です。帳票ごとに変える場合は、テンプレート管理アプリの取得元アプリ設定JSONフィールドへ入力してください。</p>
+        <textarea id="sourcesJson" spellcheck="false"></textarea>
+      </section>
+
+      <section class="krp-actions">
+        <button id="save" type="button">保存</button>
+        <button id="cancel" type="button">キャンセル</button>
+      </section>
+    </main>
+  </body>
+</html>

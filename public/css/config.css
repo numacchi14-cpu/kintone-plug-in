@@ -1,0 +1,171 @@
+.krp-config {
+  box-sizing: border-box;
+  max-width: 1040px;
+  padding: 32px;
+  color: #1f2937;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.krp-config * {
+  box-sizing: border-box;
+}
+
+.krp-config__header {
+  margin-bottom: 24px;
+}
+
+.krp-config h1 {
+  margin: 0 0 8px;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.krp-config h2 {
+  margin: 0 0 16px;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.krp-config p {
+  margin: 0;
+  color: #5b6573;
+  line-height: 1.6;
+}
+
+.krp-panel {
+  margin-bottom: 20px;
+  padding: 20px;
+  border: 1px solid #d8dde5;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.krp-guide summary {
+  color: #1f6feb;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.krp-guide__section {
+  margin-top: 20px;
+}
+
+.krp-guide__section + .krp-guide__section {
+  padding-top: 20px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.krp-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.krp-field {
+  display: grid;
+  gap: 7px;
+  color: #374151;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.krp-field input,
+.krp-field select,
+.krp-panel textarea {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid #b8c2cf;
+  border-radius: 4px;
+  color: #111827;
+  font: inherit;
+  font-weight: 400;
+}
+
+.krp-panel textarea {
+  min-height: 280px;
+  margin-top: 12px;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.krp-note {
+  font-size: 13px;
+}
+
+.krp-table {
+  width: 100%;
+  margin-top: 16px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.krp-table th,
+.krp-table td {
+  padding: 10px 12px;
+  border: 1px solid #d8dde5;
+  text-align: left;
+}
+
+.krp-table th {
+  background: #f5f7fb;
+  font-weight: 700;
+}
+
+.krp-table code {
+  font-family: Consolas, "Courier New", monospace;
+}
+
+.krp-steps,
+.krp-list {
+  margin: 16px 0 0;
+  padding-left: 24px;
+  color: #374151;
+  line-height: 1.7;
+}
+
+.krp-code {
+  overflow: auto;
+  margin: 16px 0 0;
+  padding: 14px;
+  border: 1px solid #d8dde5;
+  border-radius: 4px;
+  background: #f8fafc;
+  color: #111827;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.krp-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.krp-actions button {
+  min-width: 120px;
+  min-height: 40px;
+  border: 1px solid #1f6feb;
+  border-radius: 4px;
+  background: #1f6feb;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.krp-actions button + button {
+  border-color: #b8c2cf;
+  background: #fff;
+  color: #374151;
+}
+
+@media (max-width: 720px) {
+  .krp-config {
+    padding: 20px;
+  }
+
+  .krp-grid {
+    grid-template-columns: 1fr;
+  }
+}
