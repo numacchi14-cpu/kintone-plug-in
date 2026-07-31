@@ -124,6 +124,76 @@ kintone.events.on(['app.record.detail.show'], (event: any) => {
   return event;
 });
 
+kintone.events.on(['app.record.index.show'], (event: any) => {
+  if (pluginConfig.mode !== 'output') {
+    return event;
+  }
+
+  const header = kintone.app.getHeaderMenuSpaceElement();
+  if (!header || header.querySelector('[data-krp-index-toolbar="true"]')) {
+    return event;
+  }
+
+  const toolbar = document.createElement('span');
+  toolbar.className = 'krp-toolbar';
+  toolbar.dataset.krpIndexToolbar = 'true';
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'krp-button';
+  button.textContent = '選択レコードをExcel出力';
+  button.title = '一覧でチェックしたレコードをまとめてExcel出力します';
+
+  const status = document.createElement('span');
+  status.className = 'krp-status';
+  status.textContent = '帳票出力モード';
+
+  button.addEventListener('click', async () => {
+    const records = (kintone.app.getSelectedRecords?.() ?? []) as KintoneRecord[];
+    if (records.length > 1 && !window.confirm(`選択した${records.length}件をExcel出力します。よろしいですか？`)) {
+      return;
+    }
+    await runWithStatus(button, status, async (setStatus) => {
+      await exportSelectedReports(pluginConfig, records, setStatus);
+    });
+  });
+
+  toolbar.append(button, status);
+  header.appendChild(toolbar);
+  return event;
+});
+
+async function exportSelectedReports(
+  config: PluginConfig,
+  records: KintoneRecord[],
+  setStatus: (message: string) => void = () => undefined
+): Promise<void> {
+  if (!records.length) {
+    throw new Error('レコードが選択されていません。一覧のチェックボックスでレコードを選択してください。');
+  }
+
+  const failures: string[] = [];
+  for (const [index, record] of records.entries()) {
+    const progress = `${index + 1}/${records.length}件目`;
+    try {
+      await exportReport(config, record, (message) => setStatus(`${progress}: ${message}`));
+    } catch (error) {
+      failures.push(`${progress}: ${errorMessage(error, '出力に失敗しました。')}`);
+    }
+    if (index < records.length - 1) {
+      await wait(300);
+    }
+  }
+
+  if (failures.length) {
+    throw new Error([`${records.length}件中${failures.length}件の出力に失敗しました。`, ...failures].join('\n'));
+  }
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 async function generateInitialTemplate(config: PluginConfig, record: KintoneRecord): Promise<void> {
   const reportName = String(recordValue(record, config.templateReportNameField) || 'Excel帳票テンプレート');
   const sources = resolveTemplateSources(config, record);
@@ -786,43 +856,78 @@ async function importBuilderFields(sourceBlock: HTMLElement): Promise<void> {
   }
 
   try {
-    const currentFields = readBuilderFieldRows(sourceBlock, true);
-    const currentByCode = new Map(currentFields.map((field) => [field.code, field]));
+    const currentActiveFields = readBuilderFieldRows(sourceBlock, false);
+    const currentInactiveFields = Array.from(
+      sourceBlock.querySelectorAll('[data-krp-source="inactiveFields"] .krp-builder__field-row')
+    ).map((row) => readBuilderFieldRow(row));
+    const hadExistingFields = currentActiveFields.length > 0 || currentInactiveFields.length > 0;
+
     const result = await getSourceAppFields(appId);
-    const fieldsContainer = sourceBlock.querySelector('[data-krp-source="fields"]');
-    const inactiveFieldsContainerElement = sourceBlock.querySelector('[data-krp-source="inactiveFields"]');
 
     if (!result.fields.length) {
       throw new Error('出力に対応したフィールドが見つかりません。');
     }
 
-    if (fieldsContainer) {
-      fieldsContainer.innerHTML = '';
-    }
-    if (inactiveFieldsContainerElement) {
-      inactiveFieldsContainerElement.innerHTML = '';
-    }
+    const liveFieldsByCode = new Map(result.fields.map((field) => [field.code, field]));
 
-    if (fieldsContainer && inactiveFieldsContainerElement) {
+    const fieldsContainer = sourceBlock.querySelector('[data-krp-source="fields"]');
+    const inactiveFieldsContainerElement = sourceBlock.querySelector('[data-krp-source="inactiveFields"]');
+    if (!fieldsContainer || !inactiveFieldsContainerElement) {
+      return;
+    }
+    fieldsContainer.innerHTML = '';
+    inactiveFieldsContainerElement.innerHTML = '';
+
+    const removedLabels: string[] = [];
+
+    if (hadExistingFields) {
+      // 既存の設定(並び順・ラベル・型)はそのまま維持し、kintone側になくなったフィールドだけ除外する。
+      const knownCodes = new Set<string>();
+      currentActiveFields.forEach((field) => {
+        if (!liveFieldsByCode.has(field.code)) {
+          removedLabels.push(field.label || field.code);
+          return;
+        }
+        knownCodes.add(field.code);
+        addBuilderFieldRow(sourceBlock, { code: field.code, label: field.label, type: field.type }, field.selected, 'active');
+      });
+      currentInactiveFields.forEach((field) => {
+        if (!liveFieldsByCode.has(field.code)) {
+          removedLabels.push(field.label || field.code);
+          return;
+        }
+        knownCodes.add(field.code);
+        addBuilderFieldRow(sourceBlock, { code: field.code, label: field.label, type: field.type }, field.selected, 'inactive');
+      });
+
+      // kintone側の新規フィールドは、既存の出力フィールド構成を崩さないよう削除フィールド側に追加する。
       result.fields.forEach((field) => {
-        const current = currentByCode.get(field.code);
-        addBuilderFieldRow(
-          sourceBlock,
-          {
-            code: field.code,
-            label: current?.label || field.label,
-            type: field.type
-          },
-          current?.selected ?? true,
-          current?.state === 'inactive' ? 'inactive' : 'active'
-        );
+        if (knownCodes.has(field.code)) {
+          return;
+        }
+        addBuilderFieldRow(sourceBlock, field, true, 'inactive');
+      });
+    } else {
+      result.fields.forEach((field) => {
+        addBuilderFieldRow(sourceBlock, field, true, 'active');
       });
     }
 
     refreshFieldCodeSuggestions(sourceBlock);
     if (status) {
-      const skipped = result.skippedCount ? `、非対応${result.skippedCount}件を除外` : '';
-      status.textContent = `${result.fields.length}件を取得${skipped}`;
+      const parts = [`${result.fields.length}件を取得`];
+      if (result.skippedCount) {
+        parts.push(`非対応${result.skippedCount}件を除外`);
+      }
+      if (removedLabels.length) {
+        parts.push(`kintone側になくなった${removedLabels.length}件を除外`);
+      }
+      status.textContent = parts.join('、');
+    }
+    if (removedLabels.length) {
+      window.alert(
+        `kintone側に存在しなくなったため、次のフィールドを設定から削除しました。\n${removedLabels.join('\n')}`
+      );
     }
   } catch (error) {
     const message = errorMessage(error, 'フィールド一覧を取得できませんでした。');
