@@ -6,6 +6,7 @@ export const defaultSources: SourceAppConfig[] = [
     label: '年初予算',
     appId: '',
     sheetName: '年初予算',
+    tableName: 'tbl_annual_budget',
     fields: [
       { code: 'store_code', label: '店舗コード' },
       { code: 'date', label: '日付', type: 'date' },
@@ -21,13 +22,15 @@ export const defaultSources: SourceAppConfig[] = [
         dateRule: 'yearStartToBaseDate'
       }
     ],
-    sorts: [{ field: 'date', order: 'asc' }]
+    sorts: [{ field: 'date', order: 'asc' }],
+    lookups: []
   },
   {
     key: 'daily_plan_actual',
     label: '日別計画・実績',
     appId: '',
     sheetName: '日別計画実績',
+    tableName: 'tbl_daily_plan_actual',
     fields: [
       { code: 'store_code', label: '店舗コード' },
       { code: 'date', label: '日付', type: 'date' },
@@ -44,7 +47,8 @@ export const defaultSources: SourceAppConfig[] = [
         dateRule: 'monthStartToBaseDate'
       }
     ],
-    sorts: [{ field: 'date', order: 'asc' }]
+    sorts: [{ field: 'date', order: 'asc' }],
+    lookups: []
   }
 ];
 
@@ -58,6 +62,13 @@ export const defaultConfig: PluginConfig = {
   outputReportIdField: 'report_type',
   outputStoreField: 'store',
   outputBaseDateField: 'base_date',
+  outputPeriodStartField: '',
+  outputPeriodEndField: '',
+  outputExportedAtField: '',
+  outputExporterField: '',
+  outputFileNameField: '',
+  outputStatusField: '',
+  outputMemoField: '',
   baseDateRule: 'firstDayUsesYesterday',
   sources: defaultSources
 };

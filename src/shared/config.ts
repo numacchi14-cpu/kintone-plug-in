@@ -57,6 +57,13 @@ export function parsePluginConfig(raw: RawPluginConfig | null | undefined): Plug
     outputReportIdField: data.outputReportIdField ?? defaultConfig.outputReportIdField,
     outputStoreField: data.outputStoreField ?? defaultConfig.outputStoreField,
     outputBaseDateField: data.outputBaseDateField ?? defaultConfig.outputBaseDateField,
+    outputPeriodStartField: data.outputPeriodStartField ?? defaultConfig.outputPeriodStartField,
+    outputPeriodEndField: data.outputPeriodEndField ?? defaultConfig.outputPeriodEndField,
+    outputExportedAtField: data.outputExportedAtField ?? defaultConfig.outputExportedAtField,
+    outputExporterField: data.outputExporterField ?? defaultConfig.outputExporterField,
+    outputFileNameField: data.outputFileNameField ?? defaultConfig.outputFileNameField,
+    outputStatusField: data.outputStatusField ?? defaultConfig.outputStatusField,
+    outputMemoField: data.outputMemoField ?? defaultConfig.outputMemoField,
     baseDateRule,
     sources: parseSources(data.sourcesJson)
   };
@@ -73,6 +80,13 @@ export function serializePluginConfig(config: PluginConfig): RawPluginConfig {
     outputReportIdField: config.outputReportIdField,
     outputStoreField: config.outputStoreField,
     outputBaseDateField: config.outputBaseDateField,
+    outputPeriodStartField: config.outputPeriodStartField,
+    outputPeriodEndField: config.outputPeriodEndField,
+    outputExportedAtField: config.outputExportedAtField,
+    outputExporterField: config.outputExporterField,
+    outputFileNameField: config.outputFileNameField,
+    outputStatusField: config.outputStatusField,
+    outputMemoField: config.outputMemoField,
     baseDateRule: config.baseDateRule,
     sourcesJson: JSON.stringify(config.sources, null, 2)
   };
@@ -86,7 +100,11 @@ export function parseSources(value: string | undefined): SourceAppConfig[] {
   try {
     const parsed = JSON.parse(value) as SourceAppConfig[];
     return normalizeSources(parsed, defaultConfig.sources);
-  } catch {
+  } catch (error) {
+    console.warn(
+      '取得元アプリ設定JSONを読み込めなかったため、既定値を使用します。',
+      error instanceof Error ? error.message : error
+    );
     return defaultConfig.sources;
   }
 }
@@ -134,6 +152,7 @@ function normalizeSources(parsed: SourceAppConfig[], fallback: SourceAppConfig[]
       label: String(source.label || source.sheetName || `取得元${index + 1}`),
       appId: String(source.appId || ''),
       sheetName: String(source.sheetName || source.label || `元データ${index + 1}`),
+      tableName: source.tableName ? String(source.tableName) : undefined,
       fields: Array.isArray(source.fields)
         ? source.fields
             .filter((field) => field?.code)
@@ -173,7 +192,27 @@ function normalizeSources(parsed: SourceAppConfig[], fallback: SourceAppConfig[]
         .map((sort) => ({
           field: String(sort.field),
           order: sort.order === 'desc' ? 'desc' : 'asc'
-        }))
+        })),
+      lookups: Array.isArray(source.lookups)
+        ? source.lookups
+            .filter((lookup) => lookup?.sourceField && lookup?.masterAppId && lookup?.masterKeyField)
+            .map((lookup) => ({
+              sourceField: String(lookup.sourceField),
+              masterAppId: String(lookup.masterAppId),
+              masterKeyField: String(lookup.masterKeyField),
+              masterFields: Array.isArray(lookup.masterFields)
+                ? lookup.masterFields
+                    .filter((field) => field?.code)
+                    .map((field) => ({
+                      code: String(field.code),
+                      label: String(field.label || field.code),
+                      type: sourceFieldValueTypes.includes(field.type as SourceFieldValueType)
+                        ? (field.type as SourceFieldValueType)
+                        : undefined
+                    }))
+                : []
+            }))
+        : []
     };
   });
 }

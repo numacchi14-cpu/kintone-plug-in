@@ -31,6 +31,13 @@ export interface SourceSortConfig {
   order: 'asc' | 'desc';
 }
 
+export interface SourceLookupConfig {
+  sourceField: string;
+  masterAppId: string;
+  masterKeyField: string;
+  masterFields: SourceFieldConfig[];
+}
+
 export interface SourceFieldConfig {
   code: string;
   label: string;
@@ -42,9 +49,11 @@ export interface SourceAppConfig {
   label: string;
   appId: string;
   sheetName: string;
+  tableName?: string;
   fields: SourceFieldConfig[];
   filters: SourceFilterConfig[];
   sorts: SourceSortConfig[];
+  lookups: SourceLookupConfig[];
 }
 
 export interface PluginConfig {
@@ -57,6 +66,13 @@ export interface PluginConfig {
   outputReportIdField: string;
   outputStoreField: string;
   outputBaseDateField: string;
+  outputPeriodStartField: string;
+  outputPeriodEndField: string;
+  outputExportedAtField: string;
+  outputExporterField: string;
+  outputFileNameField: string;
+  outputStatusField: string;
+  outputMemoField: string;
   baseDateRule: BaseDateRule;
   sources: SourceAppConfig[];
 }
@@ -77,6 +93,7 @@ export interface SourceRows {
   rows: Record<string, unknown>[];
   periodStart: string;
   periodEnd: string;
+  query: string;
 }
 
 export type KintoneRecord = Record<string, { type: string; value: unknown }>;

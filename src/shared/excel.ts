@@ -1,5 +1,18 @@
 import ExcelJS from 'exceljs';
-import type { PluginConfig, ReportContext, SourceRows } from './types';
+import type { PluginConfig, ReportContext, SourceAppConfig, SourceRows } from './types';
+
+const settingsSheetName = '設定';
+const summarySheetName = '集計';
+const settingsRows = [
+  { label: '帳票ID', value: (context: ReportContext, reportName: string) => context.reportId || '' },
+  { label: '帳票名', value: (context: ReportContext, reportName: string) => context.reportName || reportName },
+  { label: '対象店舗', value: (context: ReportContext) => context.store },
+  { label: '基準日', value: (context: ReportContext) => context.baseDate },
+  { label: '対象期間開始', value: (context: ReportContext) => context.periodStart },
+  { label: '対象期間終了', value: (context: ReportContext) => context.periodEnd },
+  { label: '出力日', value: (context: ReportContext) => context.exportedAt },
+  { label: '出力者', value: (context: ReportContext) => context.exporter }
+];
 
 export async function createInitialTemplate(config: PluginConfig, reportName: string): Promise<ArrayBuffer> {
   const workbook = new ExcelJS.Workbook();
@@ -7,22 +20,16 @@ export async function createInitialTemplate(config: PluginConfig, reportName: st
   workbook.created = new Date();
   workbook.calcProperties.fullCalcOnLoad = true;
 
-  const settings = workbook.addWorksheet('設定');
-  settings.columns = [
-    { header: '項目', key: 'label', width: 22 },
-    { header: '値', key: 'value', width: 34 }
-  ];
-  settings.addRows([
-    { label: '帳票名', value: reportName },
-    { label: '対象店舗', value: '' },
-    { label: '基準日', value: '' },
-    { label: '対象期間開始', value: '' },
-    { label: '対象期間終了', value: '' },
-    { label: '出力日', value: '' },
-    { label: '出力者', value: '' }
-  ]);
-  settings.getRow(1).font = { bold: true };
+  const settings = workbook.addWorksheet(settingsSheetName);
+  settings.getColumn(1).width = 22;
+  settings.getColumn(2).width = 34;
+  settingsRows.forEach((row, index) => {
+    const rowNumber = index + 1;
+    settings.getCell(rowNumber, 1).value = row.label;
+    settings.getCell(rowNumber, 2).value = row.value(emptyReportContext(), reportName);
+  });
 
+  const usedTableNames = new Set<string>();
   for (const source of config.sources) {
     const worksheet = workbook.addWorksheet(source.sheetName);
     worksheet.columns = source.fields.map((field) => ({
@@ -33,9 +40,10 @@ export async function createInitialTemplate(config: PluginConfig, reportName: st
     applyColumnFormats(worksheet, source);
     worksheet.getRow(1).font = { bold: true };
     worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+    applySourceTable(worksheet, { source, rows: [], periodStart: '', periodEnd: '', query: '' }, usedTableNames);
   }
 
-  const summary = workbook.addWorksheet('集計');
+  const summary = workbook.addWorksheet(summarySheetName);
   summary.getCell('A1').value = 'ここにExcel側で数式・書式・レイアウトを作成してください';
   summary.getCell('A1').font = { color: { argb: 'FF667085' } };
 
@@ -43,18 +51,44 @@ export async function createInitialTemplate(config: PluginConfig, reportName: st
 }
 
 export async function fillReportTemplate(templateBuffer: ArrayBuffer, context: ReportContext, sourceRows: SourceRows[]): Promise<ArrayBuffer> {
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(templateBuffer);
+  const workbook = await loadTemplateWorkbook(templateBuffer);
   workbook.calcProperties.fullCalcOnLoad = true;
   workbook.modified = new Date();
 
-  writeSettingsSheet(workbook, context);
+  validateTemplateWorkbook(workbook, sourceRows);
+  writeSettingsSheet(workbook, context, sourceRows);
 
+  const usedTableNames = new Set<string>();
   for (const sourceResult of sourceRows) {
-    writeSourceSheet(workbook, sourceResult);
+    writeSourceSheet(workbook, sourceResult, usedTableNames);
   }
 
   return workbook.xlsx.writeBuffer();
+}
+
+export async function validateReportTemplate(templateBuffer: ArrayBuffer, sources: SourceAppConfig[]): Promise<void> {
+  const workbook = await loadTemplateWorkbook(templateBuffer);
+
+  validateTemplateWorkbook(
+    workbook,
+    sources.map((source) => ({
+      source,
+      rows: [],
+      periodStart: '',
+      periodEnd: '',
+      query: ''
+    }))
+  );
+}
+
+async function loadTemplateWorkbook(templateBuffer: ArrayBuffer): Promise<ExcelJS.Workbook> {
+  const workbook = new ExcelJS.Workbook();
+  try {
+    await workbook.xlsx.load(templateBuffer);
+  } catch {
+    throw new Error('完成版テンプレートExcelを読み込めません。xlsx形式か確認してください。');
+  }
+  return workbook;
 }
 
 export function downloadWorkbook(buffer: ArrayBuffer, fileName: string): void {
@@ -78,29 +112,53 @@ export function buildFileName(context: ReportContext): string {
   return `${parts.join('_')}.xlsx`;
 }
 
-function writeSettingsSheet(workbook: ExcelJS.Workbook, context: ReportContext): void {
-  const worksheet = workbook.getWorksheet('設定') ?? workbook.addWorksheet('設定');
-  const values = [
-    ['帳票ID', context.reportId],
-    ['帳票名', context.reportName],
-    ['対象店舗', context.store],
-    ['基準日', context.baseDate],
-    ['対象期間開始', context.periodStart],
-    ['対象期間終了', context.periodEnd],
-    ['出力日', context.exportedAt],
-    ['出力者', context.exporter]
-  ];
+function writeSettingsSheet(workbook: ExcelJS.Workbook, context: ReportContext, sourceRows: SourceRows[]): void {
+  const worksheet = workbook.getWorksheet(settingsSheetName);
+  if (!worksheet) {
+    throw new Error(`テンプレートに「${settingsSheetName}」シートがありません。`);
+  }
 
-  values.forEach(([label, value], index) => {
+  settingsRows.forEach((row, index) => {
     const rowNumber = index + 1;
+    worksheet.getCell(rowNumber, 1).value = row.label;
+    worksheet.getCell(rowNumber, 2).value = row.value(context, context.reportName);
+  });
+
+  const detailStartRow = settingsRows.length + 2;
+  if (worksheet.rowCount >= detailStartRow) {
+    worksheet.spliceRows(detailStartRow, worksheet.rowCount - detailStartRow + 1);
+  }
+
+  const detailRows: Array<[string, string | number]> = [
+    ['取得元アプリ数', sourceRows.length]
+  ];
+  sourceRows.forEach((sourceResult, index) => {
+    const prefix = `取得元${index + 1}`;
+    detailRows.push(
+      [`${prefix}名`, sourceResult.source.label],
+      [`${prefix}アプリID`, sourceResult.source.appId],
+      [`${prefix}シート名`, sourceResult.source.sheetName],
+      [`${prefix}テーブル名`, sourceResult.source.tableName || sourceResult.source.key],
+      [`${prefix}対象期間開始`, sourceResult.periodStart],
+      [`${prefix}対象期間終了`, sourceResult.periodEnd],
+      [`${prefix}取得件数`, sourceResult.rows.length],
+      [`${prefix}クエリ`, sourceResult.query]
+    );
+  });
+
+  detailRows.forEach(([label, value], index) => {
+    const rowNumber = detailStartRow + index;
     worksheet.getCell(rowNumber, 1).value = label;
     worksheet.getCell(rowNumber, 2).value = value;
   });
 }
 
-function writeSourceSheet(workbook: ExcelJS.Workbook, sourceResult: SourceRows): void {
+function writeSourceSheet(workbook: ExcelJS.Workbook, sourceResult: SourceRows, usedTableNames: Set<string>): void {
   const { source, rows } = sourceResult;
-  const worksheet = workbook.getWorksheet(source.sheetName) ?? workbook.addWorksheet(source.sheetName);
+  const worksheet = workbook.getWorksheet(source.sheetName);
+  if (!worksheet) {
+    throw new Error(`テンプレートに元データ用シート「${source.sheetName}」がありません。`);
+  }
   const headerRow = worksheet.getRow(1);
 
   source.fields.forEach((field, index) => {
@@ -121,6 +179,58 @@ function writeSourceSheet(workbook: ExcelJS.Workbook, sourceResult: SourceRows):
     });
     worksheetRow.commit();
   });
+
+  applySourceTable(worksheet, sourceResult, usedTableNames);
+}
+
+function validateTemplateWorkbook(workbook: ExcelJS.Workbook, sourceRows: SourceRows[]): void {
+  const errors: string[] = [];
+
+  if (!workbook.getWorksheet(settingsSheetName)) {
+    errors.push(`テンプレートに「${settingsSheetName}」シートがありません。`);
+  }
+  if (!workbook.getWorksheet(summarySheetName)) {
+    errors.push(`テンプレートに「${summarySheetName}」シートがありません。`);
+  }
+
+  sourceRows.forEach(({ source }) => {
+    const worksheet = workbook.getWorksheet(source.sheetName);
+    if (!worksheet) {
+      errors.push(`テンプレートに元データ用シート「${source.sheetName}」がありません。`);
+      return;
+    }
+
+    const headerValues = worksheet.getRow(1).values;
+    const headerLabels = new Set(
+      (Array.isArray(headerValues) ? headerValues : [])
+        .slice(1)
+        .map((value: unknown) => String(value ?? '').trim())
+        .filter(Boolean)
+    );
+    source.fields.forEach((field) => {
+      const label = field.label || field.code;
+      if (!headerLabels.has(label)) {
+        errors.push(`元データ用シート「${source.sheetName}」に列「${label}」がありません。`);
+      }
+    });
+  });
+
+  if (errors.length) {
+    throw new Error(['テンプレートの検証でエラーが見つかりました。', ...errors].join('\n'));
+  }
+}
+
+function emptyReportContext(): ReportContext {
+  return {
+    reportId: '',
+    reportName: '',
+    store: '',
+    baseDate: '',
+    periodStart: '',
+    periodEnd: '',
+    exportedAt: '',
+    exporter: ''
+  };
 }
 
 function normalizeCellValue(value: unknown): ExcelJS.CellValue {
@@ -155,6 +265,65 @@ function applyColumnFormats(worksheet: ExcelJS.Worksheet, source: SourceRows['so
       column.numFmt = 'yyyy-mm-dd hh:mm';
     }
   });
+}
+
+function applySourceTable(worksheet: ExcelJS.Worksheet, sourceResult: SourceRows, usedTableNames: Set<string>): void {
+  const { source, rows } = sourceResult;
+  if (!source.fields.length) {
+    return;
+  }
+
+  const tableName = uniqueTableName(source.tableName || source.key || source.sheetName, usedTableNames);
+  removeTableAtSourceRange(worksheet, tableName);
+
+  worksheet.addTable({
+    name: tableName,
+    displayName: tableName,
+    ref: 'A1',
+    headerRow: true,
+    totalsRow: false,
+    style: {
+      theme: 'TableStyleLight9',
+      showRowStripes: false
+    },
+    columns: source.fields.map((field) => ({
+      name: field.label || field.code,
+      filterButton: false
+    })),
+    rows: rows.map((row) => source.fields.map((field) => normalizeCellValue(row[field.code])))
+  });
+}
+
+function removeTableAtSourceRange(worksheet: ExcelJS.Worksheet, tableName: string): void {
+  const getTables = (worksheet as unknown as { getTables?: () => ExcelJS.Table[] }).getTables;
+  const tables = getTables?.call(worksheet) ?? [];
+  tables
+    .filter((table) => table.name === tableName || table.ref === 'A1')
+    .forEach((table) => worksheet.removeTable(table.name));
+}
+
+function uniqueTableName(value: string, usedTableNames: Set<string>): string {
+  const baseName = sanitizeExcelTableName(value);
+  let name = baseName;
+  let sequence = 2;
+  while (usedTableNames.has(name.toLowerCase())) {
+    name = `${baseName}_${sequence}`;
+    sequence += 1;
+  }
+  usedTableNames.add(name.toLowerCase());
+  return name;
+}
+
+function sanitizeExcelTableName(value: string): string {
+  const sanitized = value
+    .trim()
+    .replace(/[^A-Za-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  const candidate = sanitized || 'source';
+  const withPrefix = /^[A-Za-z_]/.test(candidate) && !/^[A-Za-z]{1,3}[0-9]{1,7}$/.test(candidate)
+    ? candidate
+    : `tbl_${candidate}`;
+  return withPrefix.slice(0, 255);
 }
 
 function sanitizeFileName(value: string): string {

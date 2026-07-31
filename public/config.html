@@ -51,12 +51,13 @@
             <li>テンプレート管理アプリでレコードを追加します。</li>
             <li>帳票IDと帳票名を入力し、画面上部の「取得元アプリ設定JSONをかんたん作成」を開きます。</li>
             <li>取得元アプリのアプリIDとExcelシート名を入力し、「フィールド一覧を取得」を押します。</li>
-            <li>出力するフィールドをチェックし、必要なら上下移動でExcelの列順を整えてJSONへ反映します。</li>
+            <li>出力フィールドと削除フィールドを行き来させながら、必要ならドラッグまたは上下移動でExcelの列順を整えてJSONへ反映します。</li>
             <li>抽出条件には対象店舗、対象期間、基準日、固定値を設定できます。日付がないアプリでは対象期間条件を追加しません。</li>
             <li>最初は添付ファイルを空のままレコードを保存します。</li>
             <li>レコード詳細画面の「初期Excelテンプレート作成」ボタンを押します。</li>
             <li>ダウンロードされたExcelの集計シートを編集します。</li>
-            <li>編集済みExcelを同じレコードの完成版テンプレート添付に添付して保存します。</li>
+            <li>編集済みExcelはレコード詳細画面の「完成版テンプレート添付を更新」から登録します。添付は1ファイルだけにしてください。</li>
+            <li>登録後は「テンプレート検証」を押して、出力に必要なシートと列見出しが揃っているか確認します。</li>
           </ol>
         </section>
 
@@ -87,6 +88,11 @@
                 <td>日付</td>
                 <td><code>base_date</code></td>
               </tr>
+              <tr>
+                <td>期間開始、期間終了、出力日時、出力者、出力ファイル名、ステータス</td>
+                <td>日付、日時、文字列1行など</td>
+                <td>任意。使う場合だけプラグイン設定で指定</td>
+              </tr>
             </tbody>
           </table>
           <ol class="krp-steps">
@@ -95,6 +101,9 @@
             <li>帳票出力アプリでレコードを追加します。</li>
             <li>帳票種類には、テンプレート管理アプリの帳票IDと同じ値を入力します。</li>
             <li>基準日は追加時に初期値が入ります。手入力または保存済みの値を出力時に優先します。</li>
+            <li>期間開始・期間終了フィールドを設定すると、基準日の月初から基準日までを自動入力します。</li>
+            <li>出力日時・出力者・出力ファイル名・ステータス・出力条件メモフィールドを設定すると、出力後にレコードへ保存します。</li>
+            <li>出力前に「出力前チェック」を押すと、テンプレート管理レコード、完成版テンプレート、取得元設定のつながりを確認できます。</li>
             <li>レコード詳細画面の「Excel帳票出力」ボタンを押します。</li>
           </ol>
         </section>
@@ -110,6 +119,7 @@
             <li>フィールド一覧を取得できない場合、アプリIDとログインユーザーのアプリ閲覧権限を確認してください。</li>
             <li>テーブル、添付ファイル、関連レコード一覧など、現在の行出力に非対応のフィールドは一覧取り込み時に除外されます。</li>
             <li>取得元アプリ設定JSONが未入力の場合は、プラグイン設定画面のJSONを使います。</li>
+            <li>完成版テンプレート添付が未登録、または2ファイル以上ある場合は、帳票出力を中断します。</li>
           </ul>
         </section>
         <section class="krp-guide__section">
@@ -121,6 +131,7 @@
     "label": "実績",
     "appId": "99",
     "sheetName": "日別計画実績",
+    "tableName": "tbl_actual",
     "fields": [
       { "code": "日付", "label": "日付", "type": "date" },
       { "code": "店舗名", "label": "店舗名" },
@@ -189,6 +200,34 @@
           <label class="krp-field">
             <span>基準日フィールドコード</span>
             <input id="outputBaseDateField" value="base_date" />
+          </label>
+          <label class="krp-field">
+            <span>期間開始フィールドコード</span>
+            <input id="outputPeriodStartField" placeholder="例: period_start" />
+          </label>
+          <label class="krp-field">
+            <span>期間終了フィールドコード</span>
+            <input id="outputPeriodEndField" placeholder="例: period_end" />
+          </label>
+          <label class="krp-field">
+            <span>出力日時フィールドコード</span>
+            <input id="outputExportedAtField" placeholder="例: exported_at" />
+          </label>
+          <label class="krp-field">
+            <span>出力者フィールドコード</span>
+            <input id="outputExporterField" placeholder="例: exporter" />
+          </label>
+          <label class="krp-field">
+            <span>出力ファイル名フィールドコード</span>
+            <input id="outputFileNameField" placeholder="例: output_file_name" />
+          </label>
+          <label class="krp-field">
+            <span>ステータスフィールドコード</span>
+            <input id="outputStatusField" placeholder="例: status" />
+          </label>
+          <label class="krp-field">
+            <span>出力条件メモフィールドコード</span>
+            <input id="outputMemoField" placeholder="例: output_memo" />
           </label>
           <label class="krp-field">
             <span>基準日の初期値ルール</span>

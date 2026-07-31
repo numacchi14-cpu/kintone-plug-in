@@ -16,6 +16,13 @@ setInputValue('templateSourcesJsonField', config.templateSourcesJsonField);
 setInputValue('outputReportIdField', config.outputReportIdField);
 setInputValue('outputStoreField', config.outputStoreField);
 setInputValue('outputBaseDateField', config.outputBaseDateField);
+setInputValue('outputPeriodStartField', config.outputPeriodStartField);
+setInputValue('outputPeriodEndField', config.outputPeriodEndField);
+setInputValue('outputExportedAtField', config.outputExportedAtField);
+setInputValue('outputExporterField', config.outputExporterField);
+setInputValue('outputFileNameField', config.outputFileNameField);
+setInputValue('outputStatusField', config.outputStatusField);
+setInputValue('outputMemoField', config.outputMemoField);
 setInputValue('baseDateRule', config.baseDateRule);
 setInputValue('sourcesJson', JSON.stringify(config.sources.length ? config.sources : defaultSources, null, 2));
 
@@ -31,6 +38,13 @@ document.getElementById('save')?.addEventListener('click', () => {
       outputReportIdField: getInputValue('outputReportIdField'),
       outputStoreField: getInputValue('outputStoreField'),
       outputBaseDateField: getInputValue('outputBaseDateField'),
+      outputPeriodStartField: getInputValue('outputPeriodStartField'),
+      outputPeriodEndField: getInputValue('outputPeriodEndField'),
+      outputExportedAtField: getInputValue('outputExportedAtField'),
+      outputExporterField: getInputValue('outputExporterField'),
+      outputFileNameField: getInputValue('outputFileNameField'),
+      outputStatusField: getInputValue('outputStatusField'),
+      outputMemoField: getInputValue('outputMemoField'),
       baseDateRule: getInputValue('baseDateRule') as BaseDateRule,
       sources: parseTemplateSources(getInputValue('sourcesJson'), defaultSources)
     };

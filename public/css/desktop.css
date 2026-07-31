@@ -79,6 +79,35 @@
   margin-top: 14px;
 }
 
+.krp-builder__field-panes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.krp-builder__field-pane {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #d8dde5;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.krp-builder__field-pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: #374151;
+  font-size: 13px;
+}
+
+.krp-builder__field-pane [data-krp-source="fields"],
+.krp-builder__field-pane [data-krp-source="inactiveFields"] {
+  min-height: 42px;
+}
+
 .krp-builder__rules {
   margin-top: 14px;
   padding-top: 12px;
@@ -101,10 +130,48 @@
 
 .krp-builder__sort-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 110px 150px;
+  grid-template-columns: 34px minmax(180px, 1fr) 110px 150px;
+  align-items: center;
   gap: 8px;
-  max-width: 620px;
+  max-width: 670px;
   margin-bottom: 8px;
+}
+
+.krp-builder__lookup-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) 130px minmax(130px, 1fr) minmax(260px, 2fr) 70px;
+  gap: 8px;
+  align-items: start;
+  margin-bottom: 8px;
+}
+
+.krp-builder__lookup-row textarea {
+  min-height: 74px;
+  padding: 6px 8px;
+  border: 1px solid #b8c2cf;
+  border-radius: 4px;
+  font: inherit;
+  font-weight: 400;
+}
+
+.krp-builder__drag-handle {
+  min-width: 34px;
+  padding: 0;
+  cursor: grab;
+  line-height: 1;
+}
+
+.krp-builder__drag-handle:active {
+  cursor: grabbing;
+}
+
+.krp-builder__row--dragging {
+  opacity: 0.55;
+}
+
+.krp-builder__row--drop-before {
+  border-top: 2px solid #1f6feb;
+  padding-top: 6px;
 }
 
 .krp-builder__source {
@@ -143,10 +210,19 @@
 
 .krp-builder__field-row {
   display: grid;
-  grid-template-columns: 28px minmax(170px, 1fr) minmax(170px, 1fr) 120px 150px;
+  grid-template-columns: 30px 24px minmax(110px, 1fr) minmax(110px, 1fr) 96px minmax(128px, auto);
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
+}
+
+.krp-builder__field-row--inactive {
+  opacity: 0.92;
+}
+
+.krp-builder__field-placeholder {
+  min-width: 24px;
+  min-height: 24px;
 }
 
 .krp-builder input[type="checkbox"] {
@@ -158,6 +234,7 @@
 
 .krp-builder__field-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
 }
 
@@ -197,11 +274,58 @@
   font-size: 12px;
 }
 
+.krp-error-dialog {
+  width: min(720px, calc(100vw - 32px));
+  border: 1px solid #d8dde5;
+  border-radius: 6px;
+  padding: 0;
+  color: #1f2937;
+}
+
+.krp-error-dialog::backdrop {
+  background: rgb(15 23 42 / 40%);
+}
+
+.krp-error-dialog__body {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.krp-error-dialog h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.krp-error-dialog pre {
+  max-height: 360px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  border: 1px solid #d8dde5;
+  border-radius: 4px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.krp-error-dialog button {
+  justify-self: end;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid #1f6feb;
+  border-radius: 4px;
+  background: #1f6feb;
+  color: #fff;
+  font-weight: 700;
+}
+
 @media (max-width: 900px) {
   .krp-builder__grid,
+  .krp-builder__field-panes,
   .krp-builder__field-row,
   .krp-builder__filter-row,
-  .krp-builder__sort-row {
+  .krp-builder__sort-row,
+  .krp-builder__lookup-row {
     grid-template-columns: 1fr;
   }
 }

@@ -63,7 +63,12 @@ export async function getSourceAppFields(appId: string): Promise<SourceFieldImpo
   return { fields, skippedCount };
 }
 
-export async function getAllRecords(appId: string, query: string, fields: string[]): Promise<KintoneRecord[]> {
+export async function getAllRecords(
+  appId: string,
+  query: string,
+  fields: string[],
+  onProgress?: (count: number) => void
+): Promise<KintoneRecord[]> {
   const records: KintoneRecord[] = [];
   const uniqueFields = Array.from(new Set(fields.filter(Boolean)));
   const cursorUrl = kintone.api.url('/k/v1/records/cursor.json', true);
@@ -82,6 +87,7 @@ export async function getAllRecords(appId: string, query: string, fields: string
     while (true) {
       const response = await kintone.api(cursorUrl, 'GET', { id: cursorId });
       records.push(...response.records);
+      onProgress?.(records.length);
 
       if (!response.next) {
         cursorId = '';
@@ -133,6 +139,41 @@ export async function downloadKintoneFile(fileKey: string): Promise<ArrayBuffer>
     };
     xhr.onerror = () => reject(new Error('Excelテンプレートの取得中に通信エラーが発生しました。'));
     xhr.send();
+  });
+}
+
+export async function uploadKintoneFile(file: File): Promise<string> {
+  const url = kintone.api.url('/k/v1/file.json', true);
+  const formData = new FormData();
+  const requestToken = typeof kintone.getRequestToken === 'function' ? kintone.getRequestToken() : '';
+  if (requestToken) {
+    formData.append('__REQUEST_TOKEN__', requestToken);
+  }
+  formData.append('file', file);
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url);
+    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+    xhr.onload = () => {
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new Error(`完成版テンプレートのアップロードに失敗しました。HTTP ${xhr.status}`));
+        return;
+      }
+
+      try {
+        const response = JSON.parse(xhr.responseText || '{}') as { fileKey?: string };
+        if (!response.fileKey) {
+          reject(new Error('完成版テンプレートのアップロード結果にfileKeyがありません。'));
+          return;
+        }
+        resolve(response.fileKey);
+      } catch {
+        reject(new Error('完成版テンプレートのアップロード結果を読み取れません。'));
+      }
+    };
+    xhr.onerror = () => reject(new Error('完成版テンプレートのアップロード中に通信エラーが発生しました。'));
+    xhr.send(formData);
   });
 }
 
@@ -268,6 +309,14 @@ export function fieldRef(fieldCode: string): string {
     throw new Error(`クエリに使用できないフィールドコードです: ${fieldCode}`);
   }
   return normalized;
+}
+
+export function buildInQuery(fieldCode: string, values: string[]): string {
+  const uniqueValues = Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+  if (!uniqueValues.length) {
+    return '';
+  }
+  return `${fieldRef(fieldCode)} in (${uniqueValues.map((value) => `"${escapeQueryValue(value)}"`).join(', ')})`;
 }
 
 function escapeQueryValue(value: string): string {

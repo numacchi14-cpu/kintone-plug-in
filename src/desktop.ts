@@ -1,15 +1,18 @@
 import { parsePluginConfig, parseTemplateSources } from './shared/config';
 import { calculateDateRange, formatDate, resolveBaseDate } from './shared/dateRules';
-import { buildFileName, createInitialTemplate, downloadWorkbook, fillReportTemplate } from './shared/excel';
+import { buildFileName, createInitialTemplate, downloadWorkbook, fillReportTemplate, validateReportTemplate } from './shared/excel';
 import {
   buildSourceQuery,
+  buildInQuery,
   downloadKintoneFile,
   fieldDisplayValue,
   findTemplateRecord,
   getAllRecords,
   getSourceAppFields,
-  recordValue
+  recordValue,
+  uploadKintoneFile
 } from './shared/kintoneApi';
+import type { SourceFieldImportResult } from './shared/kintoneApi';
 import type {
   KintoneRecord,
   PluginConfig,
@@ -17,6 +20,7 @@ import type {
   SourceAppConfig,
   SourceFieldConfig,
   SourceFilterConfig,
+  SourceLookupConfig,
   SourceSortConfig,
   SourceRows
 } from './shared/types';
@@ -44,6 +48,7 @@ kintone.events.on(['app.record.create.show', 'app.record.edit.show'], (event: an
   if (pluginConfig.mode === 'template') {
     renderSourceJsonBuilder(pluginConfig);
   } else {
+    applyOutputPeriodDefaults(pluginConfig, event.record);
     renderBaseDateUpdateButton(pluginConfig);
   }
 
@@ -70,16 +75,51 @@ kintone.events.on(['app.record.detail.show'], (event: any) => {
   status.textContent = pluginConfig.mode === 'template' ? 'テンプレート管理モード' : '帳票出力モード';
 
   button.addEventListener('click', async () => {
-    await runWithStatus(button, status, async () => {
+    await runWithStatus(button, status, async (setStatus) => {
       if (pluginConfig.mode === 'template') {
         await generateInitialTemplate(pluginConfig, event.record);
       } else {
-        await exportReport(pluginConfig, event.record);
+        await exportReport(pluginConfig, event.record, setStatus);
       }
     });
   });
 
-  toolbar.append(button, status);
+  toolbar.append(button);
+  if (pluginConfig.mode === 'template') {
+    const uploadButton = document.createElement('button');
+    uploadButton.type = 'button';
+    uploadButton.className = 'krp-button krp-button--secondary';
+    uploadButton.textContent = '完成版テンプレート添付を更新';
+    uploadButton.addEventListener('click', async () => {
+      await runWithStatus(uploadButton, status, async (setStatus) => {
+        await updateCompletedTemplateAttachment(pluginConfig, setStatus);
+      });
+    });
+    toolbar.append(uploadButton);
+
+    const validateButton = document.createElement('button');
+    validateButton.type = 'button';
+    validateButton.className = 'krp-button krp-button--secondary';
+    validateButton.textContent = 'テンプレート検証';
+    validateButton.addEventListener('click', async () => {
+      await runWithStatus(validateButton, status, async (setStatus) => {
+        await validateCompletedTemplate(pluginConfig, event.record, setStatus);
+      });
+    });
+    toolbar.append(validateButton);
+  } else {
+    const checkButton = document.createElement('button');
+    checkButton.type = 'button';
+    checkButton.className = 'krp-button krp-button--secondary';
+    checkButton.textContent = '出力前チェック';
+    checkButton.addEventListener('click', async () => {
+      await runWithStatus(checkButton, status, async (setStatus) => {
+        await validateOutputReadiness(pluginConfig, event.record, setStatus);
+      });
+    });
+    toolbar.append(checkButton);
+  }
+  toolbar.append(status);
   header.appendChild(toolbar);
   return event;
 });
@@ -89,6 +129,116 @@ async function generateInitialTemplate(config: PluginConfig, record: KintoneReco
   const sources = resolveTemplateSources(config, record);
   const buffer = await createInitialTemplate({ ...config, sources }, reportName);
   downloadWorkbook(buffer, `${reportName.replace(/[\\/:*?"<>|]/g, '_')}_初期テンプレート.xlsx`);
+}
+
+async function updateCompletedTemplateAttachment(
+  config: PluginConfig,
+  setStatus: (message: string) => void = () => undefined
+): Promise<void> {
+  const file = await chooseXlsxFile();
+  if (!file) {
+    setStatus('キャンセルしました。');
+    return;
+  }
+  if (!file.name.toLowerCase().endsWith('.xlsx')) {
+    throw new Error('完成版テンプレートはxlsx形式のファイルを選択してください。');
+  }
+
+  const appId = kintone.app.getId?.();
+  const recordId = kintone.app.record.getId?.();
+  if (!appId || !recordId) {
+    throw new Error('レコードIDを取得できません。レコード詳細画面で実行してください。');
+  }
+
+  setStatus('完成版テンプレートをアップロード中...');
+  const fileKey = await uploadKintoneFile(file);
+  const record: Record<string, { value: Array<{ fileKey: string }> }> = {
+    [config.templateAttachmentField]: { value: [{ fileKey }] }
+  };
+
+  setStatus('添付フィールドを更新中...');
+  await kintone.api(kintone.api.url('/k/v1/record.json', true), 'PUT', {
+    app: appId,
+    id: recordId,
+    record
+  });
+
+  setStatus('完成版テンプレート添付を更新しました。');
+  window.alert('完成版テンプレート添付を更新しました。画面を再読み込みすると添付欄にも反映されます。');
+}
+
+function chooseXlsxFile(): Promise<File | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    let resolved = false;
+    const finish = (file: File | null) => {
+      if (resolved) {
+        return;
+      }
+      resolved = true;
+      window.removeEventListener('focus', handleFocus);
+      input.remove();
+      resolve(file);
+    };
+    const handleFocus = () => {
+      window.setTimeout(() => {
+        if (!input.files?.length) {
+          finish(null);
+        }
+      }, 300);
+    };
+
+    input.type = 'file';
+    input.accept = '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    input.style.display = 'none';
+    input.addEventListener(
+      'change',
+      () => {
+        finish(input.files?.[0] ?? null);
+      },
+      { once: true }
+    );
+    document.body.appendChild(input);
+    window.addEventListener('focus', handleFocus);
+    input.click();
+  });
+}
+
+async function validateCompletedTemplate(
+  config: PluginConfig,
+  fallbackRecord: KintoneRecord,
+  setStatus: (message: string) => void = () => undefined
+): Promise<void> {
+  setStatus('テンプレート管理レコードを確認中...');
+  const record = (await fetchCurrentRecord()).record || fallbackRecord;
+  const sources = resolveTemplateSources(config, record);
+  const attachments = recordValue(record, config.templateAttachmentField);
+  const fileKey = resolveCompletedTemplateFileKey(attachments);
+
+  setStatus('取得元アプリ設定を検証中...');
+  await validateSourceConfigs(sources);
+
+  setStatus('完成版テンプレートを取得中...');
+  const templateBuffer = await downloadKintoneFile(fileKey);
+
+  setStatus('Excelテンプレートを検証中...');
+  await validateReportTemplate(templateBuffer, sources);
+
+  setStatus('テンプレート検証が完了しました。');
+  window.alert('テンプレート検証が完了しました。出力に必要なシートと列見出しは揃っています。');
+}
+
+async function fetchCurrentRecord(): Promise<{ record?: KintoneRecord }> {
+  const appId = kintone.app.getId?.();
+  const recordId = kintone.app.record.getId?.();
+  if (!appId || !recordId) {
+    return {};
+  }
+
+  return kintone.api(kintone.api.url('/k/v1/record.json', true), 'GET', {
+    app: appId,
+    id: recordId
+  });
 }
 
 function renderBaseDateUpdateButton(config: PluginConfig): void {
@@ -119,6 +269,7 @@ function renderBaseDateUpdateButton(config: PluginConfig): void {
     }
 
     field.value = resolveBaseDate(config.baseDateRule, new Date(), '');
+    applyOutputPeriodDefaults(config, current.record, true);
     kintone.app.record.set(current);
   });
 
@@ -182,6 +333,7 @@ function addBuilderSourceBlock(panel: HTMLElement, source?: SourceAppConfig): vo
       <label>名前<input data-krp-source="label" placeholder="例: 実績" value="${escapeHtml(source?.label ?? '')}"></label>
       <label>アプリID<input data-krp-source="appId" inputmode="numeric" placeholder="例: 99" value="${escapeHtml(source?.appId ?? '')}"></label>
       <label>Excelシート名<input data-krp-source="sheetName" placeholder="例: 日別計画実績" value="${escapeHtml(source?.sheetName ?? '')}"></label>
+      <label>Excelテーブル名<input data-krp-source="tableName" placeholder="例: tbl_actual" value="${escapeHtml(source?.tableName ?? '')}"></label>
     </div>
     <div class="krp-builder__rules">
       <div class="krp-builder__rules-head">
@@ -198,17 +350,41 @@ function addBuilderSourceBlock(panel: HTMLElement, source?: SourceAppConfig): vo
       </div>
       <div data-krp-source="sorts"></div>
     </div>
+    <div class="krp-builder__rules">
+      <div class="krp-builder__rules-head">
+        <strong>マスタ参照</strong>
+        <button type="button" data-krp-action="add-lookup">参照を追加</button>
+      </div>
+      <div data-krp-source="lookups"></div>
+      <p class="krp-builder__note">店舗IDなどのキーでマスタアプリを参照し、店舗名や営業部などを補完します。補完フィールドはJSON配列で指定します。</p>
+    </div>
     <div class="krp-builder__fields">
       <div class="krp-builder__fields-head">
         <strong>出力フィールド</strong>
         <button type="button" data-krp-action="add-field">行を追加</button>
-        <button type="button" data-krp-action="select-all-fields">全選択</button>
-        <button type="button" data-krp-action="clear-all-fields">全解除</button>
-        <button type="button" data-krp-action="remove-selected-fields">選択行を削除</button>
+        <button type="button" data-krp-action="select-all-fields">削除対象を全選択</button>
+        <button type="button" data-krp-action="clear-all-fields">削除対象を全解除</button>
+        <button type="button" data-krp-action="remove-selected-fields">選択行を削除へ移動</button>
+        <button type="button" data-krp-action="restore-all-fields">削除フィールドをすべて戻す</button>
       </div>
-      <div data-krp-source="fields"></div>
+      <div class="krp-builder__field-panes">
+        <section class="krp-builder__field-pane">
+          <div class="krp-builder__field-pane-head">
+            <strong>出力フィールド</strong>
+            <span data-krp-field-count="active"></span>
+          </div>
+          <div data-krp-source="fields"></div>
+        </section>
+        <section class="krp-builder__field-pane">
+          <div class="krp-builder__field-pane-head">
+            <strong>削除フィールド</strong>
+            <span data-krp-field-count="inactive"></span>
+          </div>
+          <div data-krp-source="inactiveFields"></div>
+        </section>
+      </div>
       <datalist id="${sourceBlockId}" data-krp-source="fieldCodes"></datalist>
-      <p class="krp-builder__note">チェックした行だけJSONへ反映されます。行の上下ボタンでExcelの列順を変更できます。</p>
+      <p class="krp-builder__note">出力フィールドだけJSONへ反映されます。削除フィールドは後から戻せます。一度すべて削除して、戻す順番で列順を整理できます。</p>
     </div>
   `;
 
@@ -217,6 +393,7 @@ function addBuilderSourceBlock(panel: HTMLElement, source?: SourceAppConfig): vo
   });
   sourceBlock.querySelector('[data-krp-action="add-filter"]')?.addEventListener('click', () => addBuilderFilterRow(sourceBlock));
   sourceBlock.querySelector('[data-krp-action="add-sort"]')?.addEventListener('click', () => addBuilderSortRow(sourceBlock));
+  sourceBlock.querySelector('[data-krp-action="add-lookup"]')?.addEventListener('click', () => addBuilderLookupRow(sourceBlock));
   sourceBlock.querySelector('[data-krp-action="add-field"]')?.addEventListener('click', () => addBuilderFieldRow(sourceBlock));
   sourceBlock.querySelector('[data-krp-action="select-all-fields"]')?.addEventListener('click', () => {
     setBuilderFieldSelection(sourceBlock, true);
@@ -226,6 +403,9 @@ function addBuilderSourceBlock(panel: HTMLElement, source?: SourceAppConfig): vo
   });
   sourceBlock.querySelector('[data-krp-action="remove-selected-fields"]')?.addEventListener('click', () => {
     removeSelectedBuilderFields(sourceBlock);
+  });
+  sourceBlock.querySelector('[data-krp-action="restore-all-fields"]')?.addEventListener('click', () => {
+    restoreAllBuilderFields(sourceBlock);
   });
   sourceBlock.querySelector('[data-krp-action="duplicate-source"]')?.addEventListener('click', () => {
     addBuilderSourceBlock(panel, readBuilderSource(sourceBlock, sourceNumber));
@@ -244,6 +424,7 @@ function addBuilderSourceBlock(panel: HTMLElement, source?: SourceAppConfig): vo
   const initialFilters = builderFilters(source);
   initialFilters.forEach((filter) => addBuilderFilterRow(sourceBlock, filter));
   builderSorts(source).forEach((sort) => addBuilderSortRow(sourceBlock, sort));
+  source?.lookups.forEach((lookup) => addBuilderLookupRow(sourceBlock, lookup));
 
   if (source?.fields.length) {
     source.fields.forEach((field) => addBuilderFieldRow(sourceBlock, field));
@@ -365,6 +546,7 @@ function addBuilderSortRow(sourceBlock: HTMLElement, sort: Partial<SourceSortCon
   const row = document.createElement('div');
   row.className = 'krp-builder__sort-row';
   row.innerHTML = `
+    <button type="button" class="krp-builder__drag-handle" data-krp-drag-handle aria-label="ドラッグで並び替え" title="ドラッグで並び替え">↕</button>
     <input data-krp-sort="field" list="${fieldCodeListId(sourceBlock)}" placeholder="フィールドコード" value="${escapeHtml(sort.field ?? '')}">
     <select data-krp-sort="order">
       <option value="asc">昇順</option>
@@ -389,7 +571,53 @@ function addBuilderSortRow(sourceBlock: HTMLElement, sort: Partial<SourceSortCon
     row.nextElementSibling?.after(row);
   });
   row.querySelector('[data-krp-action="remove-sort"]')?.addEventListener('click', () => row.remove());
+  enableBuilderRowDrag(row, sorts, 'krp-builder__sort-row');
   sorts.appendChild(row);
+}
+
+function enableBuilderRowDrag(row: HTMLElement, container: Element, rowClassName: string): void {
+  const handle = row.querySelector('[data-krp-drag-handle]');
+  if (!(handle instanceof HTMLElement)) {
+    return;
+  }
+
+  handle.draggable = true;
+  handle.addEventListener('dragstart', (event) => {
+    row.classList.add('krp-builder__row--dragging');
+    event.dataTransfer?.setData('text/plain', '');
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+    }
+  });
+  handle.addEventListener('dragend', () => {
+    row.classList.remove('krp-builder__row--dragging');
+    container.querySelectorAll('.krp-builder__row--drop-before').forEach((element) => {
+      element.classList.remove('krp-builder__row--drop-before');
+    });
+  });
+
+  row.addEventListener('dragover', (event) => {
+    const draggingRow = container.querySelector('.krp-builder__row--dragging');
+    if (!(draggingRow instanceof HTMLElement) || draggingRow === row) {
+      return;
+    }
+    if (!draggingRow.classList.contains(rowClassName)) {
+      return;
+    }
+
+    event.preventDefault();
+    const insertBefore = event.clientY < row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2;
+    row.classList.toggle('krp-builder__row--drop-before', insertBefore);
+    if (insertBefore) {
+      row.before(draggingRow);
+    } else {
+      row.after(draggingRow);
+    }
+  });
+
+  row.addEventListener('dragleave', () => {
+    row.classList.remove('krp-builder__row--drop-before');
+  });
 }
 
 function builderFilters(source?: SourceAppConfig): SourceFilterConfig[] {
@@ -413,6 +641,26 @@ function builderSorts(source?: SourceAppConfig): SourceSortConfig[] {
   return source?.sorts ?? [];
 }
 
+function addBuilderLookupRow(sourceBlock: HTMLElement, lookup: Partial<SourceLookupConfig> = {}): void {
+  const lookups = sourceBlock.querySelector('[data-krp-source="lookups"]');
+  if (!lookups) {
+    return;
+  }
+
+  const row = document.createElement('div');
+  row.className = 'krp-builder__lookup-row';
+  row.innerHTML = `
+    <input data-krp-lookup="sourceField" list="${fieldCodeListId(sourceBlock)}" placeholder="取得元キー" value="${escapeHtml(lookup.sourceField ?? '')}">
+    <input data-krp-lookup="masterAppId" inputmode="numeric" placeholder="マスタアプリID" value="${escapeHtml(lookup.masterAppId ?? '')}">
+    <input data-krp-lookup="masterKeyField" placeholder="マスタキー" value="${escapeHtml(lookup.masterKeyField ?? '')}">
+    <textarea data-krp-lookup="masterFields" spellcheck="false" placeholder='[{"code":"店舗名","label":"店舗名"}]'>${escapeHtml(JSON.stringify(lookup.masterFields ?? [], null, 2))}</textarea>
+    <button type="button" data-krp-action="remove-lookup">削除</button>
+  `;
+
+  row.querySelector('[data-krp-action="remove-lookup"]')?.addEventListener('click', () => row.remove());
+  lookups.appendChild(row);
+}
+
 function fieldCodeListId(sourceBlock: Element): string {
   return sourceBlock.querySelector('[data-krp-source="fieldCodes"]')?.id || '';
 }
@@ -420,38 +668,62 @@ function fieldCodeListId(sourceBlock: Element): string {
 function addBuilderFieldRow(
   sourceBlock: HTMLElement,
   field: { code?: string; label?: string; type?: string } = {},
-  selected = true
+  selected = true,
+  target: 'active' | 'inactive' = 'active'
 ): void {
-  const fields = sourceBlock.querySelector('[data-krp-source="fields"]');
+  const fields = target === 'active' ? activeFieldsContainer(sourceBlock) : inactiveFieldsContainer(sourceBlock);
   if (!fields) {
     return;
   }
 
   const row = document.createElement('div');
-  row.className = 'krp-builder__field-row';
-  row.innerHTML = `
-    <input type="checkbox" data-krp-field="selected" aria-label="出力対象" title="JSONへ反映する"${selected ? ' checked' : ''}>
+  row.className = `krp-builder__field-row${target === 'inactive' ? ' krp-builder__field-row--inactive' : ''}`;
+  row.dataset.krpFieldState = target;
+  row.innerHTML = fieldRowHtml(field, selected, target);
+
+  bindBuilderFieldRow(sourceBlock, row, target);
+  fields.appendChild(row);
+  refreshFieldCodeSuggestions(sourceBlock);
+  refreshBuilderFieldCounts(sourceBlock);
+}
+
+function fieldRowHtml(
+  field: { code?: string; label?: string; type?: string },
+  selected: boolean,
+  target: 'active' | 'inactive'
+): string {
+  const active = target === 'active';
+  return `
+    ${
+      active
+        ? '<button type="button" class="krp-builder__drag-handle" data-krp-drag-handle aria-label="ドラッグで列順を変更" title="ドラッグで列順を変更">↕</button>'
+        : '<span class="krp-builder__field-placeholder"></span>'
+    }
+    ${
+      active
+        ? `<input type="checkbox" data-krp-field="selected" aria-label="削除対象" title="選択行を削除フィールドへ移動"${selected ? ' checked' : ''}>`
+        : '<span class="krp-builder__field-placeholder"></span>'
+    }
     <input data-krp-field="code" placeholder="フィールドコード" value="${escapeHtml(field.code ?? '')}">
     <input data-krp-field="label" placeholder="Excel見出し" value="${escapeHtml(field.label ?? '')}">
     <select data-krp-field="type">
-      <option value="text">文字列</option>
-      <option value="number">数値</option>
-      <option value="date">日付</option>
-      <option value="datetime">日時</option>
-      <option value="boolean">真偽値</option>
+      <option value="text"${field.type === 'text' || !field.type ? ' selected' : ''}>文字列</option>
+      <option value="number"${field.type === 'number' ? ' selected' : ''}>数値</option>
+      <option value="date"${field.type === 'date' ? ' selected' : ''}>日付</option>
+      <option value="datetime"${field.type === 'datetime' ? ' selected' : ''}>日時</option>
+      <option value="boolean"${field.type === 'boolean' ? ' selected' : ''}>真偽値</option>
     </select>
     <div class="krp-builder__field-actions">
-      <button type="button" data-krp-action="move-field-up" aria-label="上へ移動" title="上へ移動">↑</button>
-      <button type="button" data-krp-action="move-field-down" aria-label="下へ移動" title="下へ移動">↓</button>
-      <button type="button" data-krp-action="remove-field">削除</button>
+      ${
+        active
+          ? '<button type="button" data-krp-action="move-field-up" aria-label="上へ移動" title="上へ移動">↑</button><button type="button" data-krp-action="move-field-down" aria-label="下へ移動" title="下へ移動">↓</button><button type="button" data-krp-action="remove-field">削除</button>'
+          : '<button type="button" data-krp-action="restore-field">戻す</button><button type="button" data-krp-action="remove-field-permanently">完全削除</button>'
+      }
     </div>
   `;
+}
 
-  const typeSelect = row.querySelector('[data-krp-field="type"]');
-  if (typeSelect instanceof HTMLSelectElement) {
-    typeSelect.value = field.type ?? 'text';
-  }
-
+function bindBuilderFieldRow(sourceBlock: HTMLElement, row: HTMLElement, target: 'active' | 'inactive'): void {
   row.querySelector('[data-krp-field="code"]')?.addEventListener('input', () => refreshFieldCodeSuggestions(sourceBlock));
   row.querySelector('[data-krp-action="move-field-up"]')?.addEventListener('click', () => {
     row.previousElementSibling?.before(row);
@@ -460,11 +732,40 @@ function addBuilderFieldRow(
     row.nextElementSibling?.after(row);
   });
   row.querySelector('[data-krp-action="remove-field"]')?.addEventListener('click', () => {
+    moveBuilderFieldRow(sourceBlock, row, 'inactive');
+  });
+  row.querySelector('[data-krp-action="restore-field"]')?.addEventListener('click', () => {
+    moveBuilderFieldRow(sourceBlock, row, 'active');
+  });
+  row.querySelector('[data-krp-action="remove-field-permanently"]')?.addEventListener('click', () => {
     row.remove();
     refreshFieldCodeSuggestions(sourceBlock);
+    refreshBuilderFieldCounts(sourceBlock);
   });
-  fields.appendChild(row);
+
+  const fields = activeFieldsContainer(sourceBlock);
+  if (target === 'active' && fields) {
+    enableBuilderRowDrag(row, fields, 'krp-builder__field-row');
+  }
+}
+
+function moveBuilderFieldRow(sourceBlock: HTMLElement, row: Element, target: 'active' | 'inactive'): void {
+  if (!(row instanceof HTMLElement)) {
+    return;
+  }
+
+  const field = readBuilderFieldRow(row);
+  row.remove();
+  addBuilderFieldRow(sourceBlock, field, false, target);
   refreshFieldCodeSuggestions(sourceBlock);
+}
+
+function activeFieldsContainer(sourceBlock: Element): Element | null {
+  return sourceBlock.querySelector('[data-krp-source="fields"]');
+}
+
+function inactiveFieldsContainer(sourceBlock: Element): Element | null {
+  return sourceBlock.querySelector('[data-krp-source="inactiveFields"]');
 }
 
 async function importBuilderFields(sourceBlock: HTMLElement): Promise<void> {
@@ -485,10 +786,11 @@ async function importBuilderFields(sourceBlock: HTMLElement): Promise<void> {
   }
 
   try {
-    const currentFields = readBuilderFieldRows(sourceBlock);
+    const currentFields = readBuilderFieldRows(sourceBlock, true);
     const currentByCode = new Map(currentFields.map((field) => [field.code, field]));
     const result = await getSourceAppFields(appId);
     const fieldsContainer = sourceBlock.querySelector('[data-krp-source="fields"]');
+    const inactiveFieldsContainerElement = sourceBlock.querySelector('[data-krp-source="inactiveFields"]');
 
     if (!result.fields.length) {
       throw new Error('出力に対応したフィールドが見つかりません。');
@@ -496,6 +798,12 @@ async function importBuilderFields(sourceBlock: HTMLElement): Promise<void> {
 
     if (fieldsContainer) {
       fieldsContainer.innerHTML = '';
+    }
+    if (inactiveFieldsContainerElement) {
+      inactiveFieldsContainerElement.innerHTML = '';
+    }
+
+    if (fieldsContainer && inactiveFieldsContainerElement) {
       result.fields.forEach((field) => {
         const current = currentByCode.get(field.code);
         addBuilderFieldRow(
@@ -505,7 +813,8 @@ async function importBuilderFields(sourceBlock: HTMLElement): Promise<void> {
             label: current?.label || field.label,
             type: field.type
           },
-          current?.selected ?? true
+          current?.selected ?? true,
+          current?.state === 'inactive' ? 'inactive' : 'active'
         );
       });
     }
@@ -529,26 +838,34 @@ async function importBuilderFields(sourceBlock: HTMLElement): Promise<void> {
 }
 
 function readBuilderFieldRows(
-  sourceBlock: Element
-): Array<SourceFieldConfig & { selected: boolean }> {
-  return Array.from(sourceBlock.querySelectorAll('.krp-builder__field-row'))
-    .map((row) => {
-      const code = getRowValue(row, 'code');
-      const label = getRowValue(row, 'label') || code;
-      const type = getRowValue(row, 'type') as SourceFieldConfig['type'];
-      const selectedElement = row.querySelector('[data-krp-field="selected"]');
-      return {
-        code,
-        label,
-        type,
-        selected: selectedElement instanceof HTMLInputElement ? selectedElement.checked : true
-      };
-    })
+  sourceBlock: Element,
+  includeInactive = false
+): Array<SourceFieldConfig & { selected: boolean; state: 'active' | 'inactive' }> {
+  const selector = includeInactive
+    ? '.krp-builder__field-row'
+    : '[data-krp-source="fields"] .krp-builder__field-row';
+  return Array.from(sourceBlock.querySelectorAll(selector))
+    .map((row) => readBuilderFieldRow(row))
     .filter((field) => field.code);
 }
 
+function readBuilderFieldRow(row: Element): SourceFieldConfig & { selected: boolean; state: 'active' | 'inactive' } {
+  const code = getRowValue(row, 'code');
+  const label = getRowValue(row, 'label') || code;
+  const type = getRowValue(row, 'type') as SourceFieldConfig['type'];
+  const selectedElement = row.querySelector('[data-krp-field="selected"]');
+  const state = row instanceof HTMLElement && row.dataset.krpFieldState === 'inactive' ? 'inactive' : 'active';
+  return {
+    code,
+    label,
+    type,
+    selected: selectedElement instanceof HTMLInputElement ? selectedElement.checked : true,
+    state
+  };
+}
+
 function setBuilderFieldSelection(sourceBlock: Element, selected: boolean): void {
-  sourceBlock.querySelectorAll('[data-krp-field="selected"]').forEach((element) => {
+  sourceBlock.querySelectorAll('[data-krp-source="fields"] [data-krp-field="selected"]').forEach((element) => {
     if (element instanceof HTMLInputElement) {
       element.checked = selected;
     }
@@ -556,13 +873,19 @@ function setBuilderFieldSelection(sourceBlock: Element, selected: boolean): void
 }
 
 function removeSelectedBuilderFields(sourceBlock: HTMLElement): void {
-  sourceBlock.querySelectorAll('.krp-builder__field-row').forEach((row) => {
+  sourceBlock.querySelectorAll('[data-krp-source="fields"] .krp-builder__field-row').forEach((row) => {
     const checkbox = row.querySelector('[data-krp-field="selected"]');
     if (checkbox instanceof HTMLInputElement && checkbox.checked) {
-      row.remove();
+      moveBuilderFieldRow(sourceBlock, row, 'inactive');
     }
   });
   refreshFieldCodeSuggestions(sourceBlock);
+}
+
+function restoreAllBuilderFields(sourceBlock: HTMLElement): void {
+  Array.from(sourceBlock.querySelectorAll('[data-krp-source="inactiveFields"] .krp-builder__field-row')).forEach((row) => {
+    moveBuilderFieldRow(sourceBlock, row, 'active');
+  });
 }
 
 function refreshFieldCodeSuggestions(sourceBlock: Element): void {
@@ -571,7 +894,7 @@ function refreshFieldCodeSuggestions(sourceBlock: Element): void {
     return;
   }
 
-  const codes = readBuilderFieldRows(sourceBlock).map((field) => field.code);
+  const codes = readBuilderFieldRows(sourceBlock, true).map((field) => field.code);
   datalist.replaceChildren(
     ...codes.map((code) => {
       const option = document.createElement('option');
@@ -579,6 +902,18 @@ function refreshFieldCodeSuggestions(sourceBlock: Element): void {
       return option;
     })
   );
+  refreshBuilderFieldCounts(sourceBlock);
+}
+
+function refreshBuilderFieldCounts(sourceBlock: Element): void {
+  const activeCount = sourceBlock.querySelector('[data-krp-field-count="active"]');
+  const inactiveCount = sourceBlock.querySelector('[data-krp-field-count="inactive"]');
+  if (activeCount) {
+    activeCount.textContent = `${sourceBlock.querySelectorAll('[data-krp-source="fields"] .krp-builder__field-row').length}件`;
+  }
+  if (inactiveCount) {
+    inactiveCount.textContent = `${sourceBlock.querySelectorAll('[data-krp-source="inactiveFields"] .krp-builder__field-row').length}件`;
+  }
 }
 
 function applyBuilderJson(config: PluginConfig, panel: HTMLElement): void {
@@ -635,13 +970,9 @@ function readBuilderSource(sourceBlock: Element, sourceNumber: number): SourceAp
   const fields: SourceAppConfig['fields'] = [];
   const filters: SourceFilterConfig[] = [];
   const sorts: SourceSortConfig[] = [];
+  const lookups: SourceLookupConfig[] = [];
 
-  Array.from(sourceBlock.querySelectorAll('.krp-builder__field-row')).forEach((row) => {
-    const selected = row.querySelector('[data-krp-field="selected"]');
-    if (selected instanceof HTMLInputElement && !selected.checked) {
-      return;
-    }
-
+  Array.from(sourceBlock.querySelectorAll('[data-krp-source="fields"] .krp-builder__field-row')).forEach((row) => {
     const code = getRowValue(row, 'code');
     if (!code) {
       return;
@@ -686,14 +1017,32 @@ function readBuilderSource(sourceBlock: Element, sourceNumber: number): SourceAp
     });
   });
 
+  sourceBlock.querySelectorAll('.krp-builder__lookup-row').forEach((row) => {
+    const sourceField = getBuilderControlValue(row, 'lookup', 'sourceField');
+    const masterAppId = getBuilderControlValue(row, 'lookup', 'masterAppId');
+    const masterKeyField = getBuilderControlValue(row, 'lookup', 'masterKeyField');
+    if (!sourceField || !masterAppId || !masterKeyField) {
+      return;
+    }
+
+    lookups.push({
+      sourceField,
+      masterAppId,
+      masterKeyField,
+      masterFields: parseBuilderMasterFields(getBuilderControlValue(row, 'lookup', 'masterFields'))
+    });
+  });
+
   return {
     key: toSourceKey(label || getSourceValue(sourceBlock, 'sheetName') || `source_${sourceNumber}`),
     label,
     appId: getSourceValue(sourceBlock, 'appId'),
     sheetName: getSourceValue(sourceBlock, 'sheetName'),
+    tableName: getSourceValue(sourceBlock, 'tableName') || undefined,
     fields,
     filters,
-    sorts
+    sorts,
+    lookups
   };
 }
 
@@ -707,9 +1056,38 @@ function getRowValue(row: Element, name: string): string {
   return element instanceof HTMLInputElement || element instanceof HTMLSelectElement ? element.value.trim() : '';
 }
 
-function getBuilderControlValue(row: Element, group: 'filter' | 'sort', name: string): string {
+function getBuilderControlValue(row: Element, group: 'filter' | 'sort' | 'lookup', name: string): string {
   const element = row.querySelector(`[data-krp-${group}="${name}"]`);
-  return element instanceof HTMLInputElement || element instanceof HTMLSelectElement ? element.value.trim() : '';
+  return element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement
+    ? element.value.trim()
+    : '';
+}
+
+function parseBuilderMasterFields(value: string): SourceFieldConfig[] {
+  if (!value) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value) as SourceFieldConfig[];
+    return Array.isArray(parsed)
+      ? parsed
+          .filter((field) => field?.code)
+          .map((field) => {
+            const type = ['text', 'number', 'date', 'datetime', 'boolean'].includes(String(field.type))
+              ? field.type
+              : undefined;
+            return {
+              code: String(field.code),
+              label: String(field.label || field.code),
+              ...(type ? { type } : {})
+            };
+          })
+      : [];
+  } catch {
+    window.alert('マスタ参照の補完フィールドJSONが不正です。');
+    return [];
+  }
 }
 
 function refreshSourceSummaries(panel: HTMLElement): void {
@@ -733,7 +1111,87 @@ function escapeHtml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-async function exportReport(config: PluginConfig, record: KintoneRecord): Promise<void> {
+async function exportReport(
+  config: PluginConfig,
+  record: KintoneRecord,
+  setStatus: (message: string) => void = () => undefined
+): Promise<void> {
+  setStatus('出力条件を確認中...');
+  const { reportId, store, baseDate } = resolveOutputConditions(config, record);
+
+  setStatus('テンプレート設定を取得中...');
+  const templateRecord = await findTemplateRecord(config, reportId);
+  const reportName = String(recordValue(templateRecord, config.templateReportNameField) || reportId);
+  const sources = resolveTemplateSources(config, templateRecord);
+  const attachments = recordValue(templateRecord, config.templateAttachmentField);
+  const fileKey = resolveCompletedTemplateFileKey(attachments);
+
+  setStatus('取得元アプリ設定を検証中...');
+  await validateSourceConfigs(sources);
+
+  const sourceRows = await fetchSourceRows(sources, store, baseDate, setStatus);
+  const wholeRange = mergeSourceRanges(sourceRows, baseDate);
+  const exportedAt = formatDateTime(new Date());
+  const context: ReportContext = {
+    reportId,
+    reportName,
+    store,
+    baseDate,
+    periodStart: wholeRange.periodStart,
+    periodEnd: wholeRange.periodEnd,
+    exportedAt,
+    exporter: kintone.getLoginUser?.()?.name || ''
+  };
+
+  setStatus('Excelテンプレートを取得中...');
+  const templateBuffer = await downloadKintoneFile(fileKey);
+  setStatus('Excel帳票を作成中...');
+  const outputBuffer = await fillReportTemplate(templateBuffer, context, sourceRows);
+  const fileName = buildFileName(context);
+  setStatus('Excelをダウンロード中...');
+  downloadWorkbook(outputBuffer, fileName);
+  setStatus('出力履歴を保存中...');
+  await saveOutputHistory(config, context, fileName);
+}
+
+async function validateOutputReadiness(
+  config: PluginConfig,
+  record: KintoneRecord,
+  setStatus: (message: string) => void = () => undefined
+): Promise<void> {
+  setStatus('出力条件を確認中...');
+  const { reportId, store, baseDate } = resolveOutputConditions(config, record);
+
+  setStatus('テンプレート設定を取得中...');
+  const templateRecord = await findTemplateRecord(config, reportId);
+  const reportName = String(recordValue(templateRecord, config.templateReportNameField) || reportId);
+  const sources = resolveTemplateSources(config, templateRecord);
+  const attachments = recordValue(templateRecord, config.templateAttachmentField);
+  const fileKey = resolveCompletedTemplateFileKey(attachments);
+
+  setStatus('取得元アプリ設定を検証中...');
+  await validateSourceConfigs(sources);
+
+  setStatus('取得クエリを確認中...');
+  sources.forEach((source) => {
+    sourceDateRange(source, baseDate);
+    buildSourceQuery(source, store, baseDate);
+  });
+
+  setStatus('Excelテンプレートを取得中...');
+  const templateBuffer = await downloadKintoneFile(fileKey);
+
+  setStatus('Excelテンプレートを検証中...');
+  await validateReportTemplate(templateBuffer, sources);
+
+  setStatus('出力前チェックが完了しました。');
+  window.alert(`出力前チェックが完了しました。\n帳票: ${reportName}\n取得元アプリ: ${sources.length}件`);
+}
+
+function resolveOutputConditions(
+  config: PluginConfig,
+  record: KintoneRecord
+): { reportId: string; store: string; baseDate: string } {
   const reportId = String(recordValue(record, config.outputReportIdField) || '');
   const store = String(recordValue(record, config.outputStoreField) || '');
   const currentBaseDate = String(recordValue(record, config.outputBaseDateField) || '');
@@ -752,32 +1210,24 @@ async function exportReport(config: PluginConfig, record: KintoneRecord): Promis
     throw new Error('基準日が未入力です。');
   }
 
-  const templateRecord = await findTemplateRecord(config, reportId);
-  const reportName = String(recordValue(templateRecord, config.templateReportNameField) || reportId);
-  const sources = resolveTemplateSources(config, templateRecord);
-  const attachments = recordValue(templateRecord, config.templateAttachmentField);
-  const fileKey = Array.isArray(attachments) ? attachments[0]?.fileKey : undefined;
+  return { reportId, store, baseDate };
+}
 
-  if (!fileKey) {
+function resolveCompletedTemplateFileKey(attachments: unknown): string {
+  if (!Array.isArray(attachments) || attachments.length === 0) {
     throw new Error('完成版テンプレート添付が見つかりません。');
   }
 
-  const sourceRows = await fetchSourceRows(sources, store, baseDate);
-  const wholeRange = mergeSourceRanges(sourceRows, baseDate);
-  const context: ReportContext = {
-    reportId,
-    reportName,
-    store,
-    baseDate,
-    periodStart: wholeRange.periodStart,
-    periodEnd: wholeRange.periodEnd,
-    exportedAt: formatDate(new Date()),
-    exporter: kintone.getLoginUser?.()?.name || ''
-  };
+  if (attachments.length > 1) {
+    throw new Error('完成版テンプレート添付が複数あります。1つだけ添付してください。');
+  }
 
-  const templateBuffer = await downloadKintoneFile(fileKey);
-  const outputBuffer = await fillReportTemplate(templateBuffer, context, sourceRows);
-  downloadWorkbook(outputBuffer, buildFileName(context));
+  const fileKey = attachments[0]?.fileKey;
+  if (!fileKey) {
+    throw new Error('完成版テンプレート添付のfileKeyを取得できません。');
+  }
+
+  return String(fileKey);
 }
 
 function resolveTemplateSources(config: PluginConfig, record: KintoneRecord): SourceAppConfig[] {
@@ -785,31 +1235,171 @@ function resolveTemplateSources(config: PluginConfig, record: KintoneRecord): So
   return parseTemplateSources(recordSourcesJson, config.sources);
 }
 
-async function fetchSourceRows(sources: SourceAppConfig[], store: string, baseDate: string): Promise<SourceRows[]> {
+async function fetchSourceRows(
+  sources: SourceAppConfig[],
+  store: string,
+  baseDate: string,
+  setStatus: (message: string) => void = () => undefined
+): Promise<SourceRows[]> {
   const results: SourceRows[] = [];
 
-  for (const source of sources) {
+  for (const [index, source] of sources.entries()) {
     if (!source.appId) {
       continue;
     }
 
+    const sourceLabel = source.label || source.key || `取得元${index + 1}`;
+    setStatus(`取得中: ${sourceLabel}`);
     const range = sourceDateRange(source, baseDate);
     const query = buildSourceQuery(source, store, baseDate);
-    const fieldCodes = source.fields.map((field) => field.code);
-    const records = await getAllRecords(source.appId, query, fieldCodes);
-    const rows = records.map((record) =>
-      Object.fromEntries(source.fields.map((field) => [field.code, fieldDisplayValue(record, field)]))
-    );
+    const lookupFieldCodes = new Set(source.lookups.flatMap((lookup) => lookup.masterFields.map((field) => field.code)));
+    const fieldCodes = [
+      ...source.fields.filter((field) => !lookupFieldCodes.has(field.code)).map((field) => field.code),
+      ...source.lookups.map((lookup) => lookup.sourceField)
+    ];
+    const records = await getAllRecords(source.appId, query, fieldCodes, (count) => {
+      setStatus(`取得中: ${sourceLabel} ${count}件`);
+    });
+    const rows = records.map((record) => {
+      const row = Object.fromEntries(source.fields.map((field) => [field.code, fieldDisplayValue(record, field)]));
+      source.lookups.forEach((lookup) => {
+        if (!(lookup.sourceField in row)) {
+          row[lookup.sourceField] = fieldDisplayValue(record, {
+            code: lookup.sourceField,
+            label: lookup.sourceField
+          });
+        }
+      });
+      return row;
+    });
+    await applySourceLookups(source, rows, setStatus);
 
     results.push({
       source,
       rows,
       periodStart: range.start,
-      periodEnd: range.end
+      periodEnd: range.end,
+      query
     });
   }
 
   return results;
+}
+
+async function validateSourceConfigs(sources: SourceAppConfig[]): Promise<void> {
+  const errors: string[] = [];
+
+  for (const source of sources) {
+    const sourceLabel = source.label || source.key || source.sheetName;
+    if (!source.appId) {
+      errors.push(`取得元アプリ「${sourceLabel}」のアプリIDが未設定です。`);
+      continue;
+    }
+
+    let sourceFields: SourceFieldImportResult['fields'];
+    try {
+      sourceFields = (await getSourceAppFields(source.appId)).fields;
+    } catch {
+      errors.push(`取得元アプリ「${sourceLabel}」（アプリID: ${source.appId}）が存在しない、または閲覧権限がありません。`);
+      continue;
+    }
+
+    const sourceFieldCodes = new Set(sourceFields.map((field) => field.code));
+    const lookupOutputFields = new Set(source.lookups.flatMap((lookup) => lookup.masterFields.map((field) => field.code)));
+    const requiredSourceFields = [
+      ...source.fields.filter((field) => !lookupOutputFields.has(field.code)).map((field) => field.code),
+      ...source.filters.map((filter) => filter.field),
+      ...source.sorts.map((sort) => sort.field),
+      ...source.lookups.map((lookup) => lookup.sourceField)
+    ];
+    Array.from(new Set(requiredSourceFields.filter(Boolean))).forEach((fieldCode) => {
+      if (!sourceFieldCodes.has(fieldCode)) {
+        errors.push(`取得元アプリ「${sourceLabel}」にフィールド「${fieldCode}」が存在しません。`);
+      }
+    });
+
+    for (const lookup of source.lookups) {
+      const lookupLabel = `${sourceLabel} / マスタ参照 ${lookup.masterAppId}`;
+      let masterFields: SourceFieldImportResult['fields'];
+      try {
+        masterFields = (await getSourceAppFields(lookup.masterAppId)).fields;
+      } catch {
+        errors.push(`マスタアプリ「${lookupLabel}」が存在しない、または閲覧権限がありません。`);
+        continue;
+      }
+
+      const masterFieldCodes = new Set(masterFields.map((field) => field.code));
+      [lookup.masterKeyField, ...lookup.masterFields.map((field) => field.code)].filter(Boolean).forEach((fieldCode) => {
+        if (!masterFieldCodes.has(fieldCode)) {
+          errors.push(`マスタアプリ「${lookupLabel}」にフィールド「${fieldCode}」が存在しません。`);
+        }
+      });
+    }
+  }
+
+  if (errors.length) {
+    throw new Error(['取得元アプリ設定の検証でエラーが見つかりました。', ...errors].join('\n'));
+  }
+}
+
+async function applySourceLookups(
+  source: SourceAppConfig,
+  rows: Record<string, unknown>[],
+  setStatus: (message: string) => void = () => undefined
+): Promise<void> {
+  for (const lookup of source.lookups) {
+    const keys = rows.map((row) => String(row[lookup.sourceField] ?? '')).filter(Boolean);
+    if (!keys.length || !lookup.masterFields.length) {
+      continue;
+    }
+
+    setStatus(`マスタ参照中: ${source.label || source.key}`);
+    const masterRecords = await fetchLookupMasterRecords(
+      lookup.masterAppId,
+      lookup.masterKeyField,
+      lookup.masterFields,
+      keys,
+      (count) => setStatus(`マスタ参照中: ${source.label || source.key} ${count}件`)
+    );
+    const masterByKey = new Map(
+      masterRecords.map((record) => [
+        String(fieldDisplayValue(record, { code: lookup.masterKeyField, label: lookup.masterKeyField }) || ''),
+        record
+      ])
+    );
+
+    rows.forEach((row) => {
+      const master = masterByKey.get(String(row[lookup.sourceField] ?? ''));
+      if (!master) {
+        return;
+      }
+
+      lookup.masterFields.forEach((field) => {
+        row[field.code] = fieldDisplayValue(master, field);
+      });
+    });
+  }
+}
+
+async function fetchLookupMasterRecords(
+  appId: string,
+  keyField: string,
+  fields: SourceFieldConfig[],
+  keys: string[],
+  onProgress?: (count: number) => void
+): Promise<KintoneRecord[]> {
+  const records: KintoneRecord[] = [];
+  const chunkSize = 100;
+  for (let index = 0; index < keys.length; index += chunkSize) {
+    const chunk = keys.slice(index, index + chunkSize);
+    const query = buildInQuery(keyField, chunk);
+    if (!query) {
+      continue;
+    }
+    records.push(...(await getAllRecords(appId, query, [keyField, ...fields.map((field) => field.code)])));
+    onProgress?.(records.length);
+  }
+  return records;
 }
 
 function sourceDateRange(source: SourceAppConfig, baseDate: string): { start: string; end: string } {
@@ -833,19 +1423,121 @@ function mergeSourceRanges(sourceRows: SourceRows[], fallbackDate: string): { pe
   };
 }
 
-async function runWithStatus(button: HTMLButtonElement, status: HTMLElement, action: () => Promise<void>): Promise<void> {
+function applyOutputPeriodDefaults(config: PluginConfig, record: Record<string, any>, force = false): void {
+  const baseDate = String(recordValue(record as KintoneRecord, config.outputBaseDateField) || '');
+  if (!baseDate || (!config.outputPeriodStartField && !config.outputPeriodEndField)) {
+    return;
+  }
+
+  const range = calculateDateRange('monthStartToBaseDate', baseDate);
+  setRecordFieldValue(record, config.outputPeriodStartField, range.start, force);
+  setRecordFieldValue(record, config.outputPeriodEndField, range.end, force);
+}
+
+function setRecordFieldValue(record: Record<string, any>, fieldCode: string, value: string, force: boolean): void {
+  if (!fieldCode || !record[fieldCode]) {
+    return;
+  }
+  if (force || !record[fieldCode].value) {
+    record[fieldCode].value = value;
+  }
+}
+
+async function saveOutputHistory(config: PluginConfig, context: ReportContext, fileName: string): Promise<void> {
+  const recordId = kintone.app.record.getId?.();
+  const appId = kintone.app.getId?.();
+  const record: Record<string, { value: string }> = {};
+
+  addHistoryField(record, config.outputPeriodStartField, context.periodStart);
+  addHistoryField(record, config.outputPeriodEndField, context.periodEnd);
+  addHistoryField(record, config.outputExportedAtField, context.exportedAt);
+  addHistoryField(record, config.outputExporterField, context.exporter);
+  addHistoryField(record, config.outputFileNameField, fileName);
+  addHistoryField(record, config.outputStatusField, '出力済み');
+  addHistoryField(record, config.outputMemoField, buildOutputMemo(context, fileName));
+
+  if (!recordId || !appId || !Object.keys(record).length) {
+    return;
+  }
+
+  await kintone.api(kintone.api.url('/k/v1/record.json', true), 'PUT', {
+    app: appId,
+    id: recordId,
+    record
+  });
+}
+
+function buildOutputMemo(context: ReportContext, fileName: string): string {
+  return [
+    `帳票ID: ${context.reportId}`,
+    `帳票名: ${context.reportName}`,
+    `対象店舗: ${context.store}`,
+    `基準日: ${context.baseDate}`,
+    `対象期間: ${context.periodStart} - ${context.periodEnd}`,
+    `出力日時: ${context.exportedAt}`,
+    `出力者: ${context.exporter}`,
+    `出力ファイル名: ${fileName}`
+  ].join('\n');
+}
+
+function addHistoryField(record: Record<string, { value: string }>, fieldCode: string, value: string): void {
+  if (fieldCode) {
+    record[fieldCode] = { value };
+  }
+}
+
+function formatDateTime(value: Date): string {
+  const date = formatDate(value);
+  const hours = String(value.getHours()).padStart(2, '0');
+  const minutes = String(value.getMinutes()).padStart(2, '0');
+  const seconds = String(value.getSeconds()).padStart(2, '0');
+  return `${date}T${hours}:${minutes}:${seconds}`;
+}
+
+async function runWithStatus(
+  button: HTMLButtonElement,
+  status: HTMLElement,
+  action: (setStatus: (message: string) => void) => Promise<void>
+): Promise<void> {
   button.disabled = true;
-  status.textContent = '処理中...';
+  const setStatus = (message: string) => {
+    status.textContent = message;
+  };
+  setStatus('処理中...');
 
   try {
-    await action();
-    status.textContent = '完了しました。';
+    await action(setStatus);
+    setStatus('完了しました。');
   } catch (error) {
-    status.textContent = 'エラー';
-    window.alert(errorMessage(error, '処理に失敗しました。'));
+    setStatus('エラー');
+    showErrorDialog(errorMessage(error, '処理に失敗しました。'));
   } finally {
     button.disabled = false;
   }
+}
+
+function showErrorDialog(message: string): void {
+  const dialog = document.createElement('dialog');
+  if (typeof dialog.showModal !== 'function') {
+    window.alert(message);
+    return;
+  }
+
+  dialog.className = 'krp-error-dialog';
+  dialog.innerHTML = `
+    <form method="dialog" class="krp-error-dialog__body">
+      <h2>処理に失敗しました</h2>
+      <pre></pre>
+      <button type="submit">閉じる</button>
+    </form>
+  `;
+  const pre = dialog.querySelector('pre');
+  if (pre) {
+    pre.textContent = message;
+  }
+  dialog.addEventListener('close', () => dialog.remove());
+  document.body.appendChild(dialog);
+  dialog.showModal();
 }
 
 function errorMessage(error: unknown, fallback: string): string {

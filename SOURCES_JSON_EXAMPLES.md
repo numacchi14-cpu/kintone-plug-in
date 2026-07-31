@@ -15,6 +15,7 @@
     "label": "実績",
     "appId": "99",
     "sheetName": "日別計画実績",
+    "tableName": "tbl_actual",
     "fields": [
       { "code": "日付", "label": "日付", "type": "date" },
       { "code": "店舗名", "label": "店舗名" },
@@ -40,6 +41,7 @@
     "label": "年初予算",
     "appId": "101",
     "sheetName": "年初予算",
+    "tableName": "tbl_annual_budget",
     "fields": [
       { "code": "店舗名", "label": "店舗名" },
       { "code": "日付", "label": "日付", "type": "date" },
@@ -58,6 +60,7 @@
     "label": "実績",
     "appId": "102",
     "sheetName": "日別計画実績",
+    "tableName": "tbl_actual",
     "fields": [
       { "code": "日付", "label": "日付", "type": "date" },
       { "code": "店舗名", "label": "店舗名" },
@@ -83,6 +86,7 @@
     "label": "実績",
     "appId": "99",
     "sheetName": "日別計画実績",
+    "tableName": "tbl_actual",
     "fields": [
       { "code": "日付", "label": "日付", "type": "date" },
       { "code": "店舗名", "label": "店舗名" },
@@ -123,6 +127,7 @@
     "label": "店舗マスタ",
     "appId": "201",
     "sheetName": "店舗マスタ",
+    "tableName": "tbl_store_master",
     "fields": [
       { "code": "店舗ID", "label": "店舗ID" },
       { "code": "店舗名", "label": "店舗名" },
@@ -140,6 +145,46 @@
 
 `filters` を空配列にすると、そのアプリは全件取得します。
 
+## 店舗マスタ参照例
+
+実績データ側に店舗IDだけがあり、店舗名や営業部を店舗マスタから補いたい場合は `lookups` を使います。`fields` には最終的にExcelへ出したい列を並べます。
+
+```json
+[
+  {
+    "key": "actual",
+    "label": "実績",
+    "appId": "99",
+    "sheetName": "日別計画実績",
+    "tableName": "tbl_actual",
+    "fields": [
+      { "code": "日付", "label": "日付", "type": "date" },
+      { "code": "店舗ID", "label": "店舗ID" },
+      { "code": "店舗名", "label": "店舗名" },
+      { "code": "営業部", "label": "営業部" },
+      { "code": "実績_総売上", "label": "実績_総売上", "type": "number" }
+    ],
+    "filters": [
+      { "field": "店舗ID", "operator": "=", "valueFrom": "store", "valueType": "text" }
+    ],
+    "sorts": [
+      { "field": "日付", "order": "asc" }
+    ],
+    "lookups": [
+      {
+        "sourceField": "店舗ID",
+        "masterAppId": "201",
+        "masterKeyField": "店舗ID",
+        "masterFields": [
+          { "code": "店舗名", "label": "店舗名" },
+          { "code": "営業部", "label": "営業部" }
+        ]
+      }
+    ]
+  }
+]
+```
+
 ## 項目説明
 
 | 項目 | 必須 | 説明 |
@@ -148,6 +193,7 @@
 | `label` | 任意 | 人間向けの名前 |
 | `appId` | 必須 | 取得元kintoneアプリID |
 | `sheetName` | 必須 | Excelの書き込み先シート名 |
+| `tableName` | 任意 | Excelテーブル名。未指定なら `key` などから自動生成 |
 | `fields` | 必須 | 出力するフィールドと列順 |
 | `fields[].code` | 必須 | kintoneのフィールドコード |
 | `fields[].label` | 任意 | Excelの列見出し |
@@ -162,6 +208,11 @@
 | `sorts` | 任意 | 複数指定できる並び順 |
 | `sorts[].field` | 必須 | 並び順に使うフィールドコード |
 | `sorts[].order` | 必須 | `asc` または `desc` |
+| `lookups` | 任意 | マスタアプリ参照設定 |
+| `lookups[].sourceField` | 必須 | 取得元行にある結合キー |
+| `lookups[].masterAppId` | 必須 | マスタアプリID |
+| `lookups[].masterKeyField` | 必須 | マスタ側の結合キー |
+| `lookups[].masterFields` | 必須 | マスタから補うフィールド |
 
 ## 日付条件の期間ルール
 
@@ -180,6 +231,7 @@
 - `fields` の順番がExcel列順になります。
 - `fields[].code` はkintoneのフィールドコードです。フィールド名ではありません。
 - `fields[].label` はExcelに出す見出しです。
+- 集計シートでは `tableName[列見出し]` の構造化参照を使えます。
 - 数値として扱う列は `type: "number"` を指定してください。
 - 日付として扱う列は `type: "date"` を指定してください。
 - 複数の `filters` はANDで結合します。

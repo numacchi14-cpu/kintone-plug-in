@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "version": "0.7.0",
+  "version": "0.14.0",
   "type": "APP",
   "name": {
     "ja": "Excel帳票出力",
