@@ -8,6 +8,7 @@
 - 帳票ごとに取得元アプリ設定JSONを保存可能
 - 取得元アプリはJSON設定で複数指定可能
 - アプリIDから出力フィールド一覧と型を取り込み可能
+- テンプレート管理アプリから、紐づく帳票出力アプリの任意フィールドを抽出条件に指定可能
 - 出力フィールドの選択、削除、上下移動に対応
 - 取得元ごとに複数の抽出条件と並び順を設定可能
 - 日付フィールドがないアプリと条件なし全件取得に対応
@@ -16,8 +17,8 @@
 - 設定シートへ出力条件を書き込み
 - 元データ用シートへkintoneレコードを書き込み
 - 集計シートの数式・書式は触らず保持
-- 基準日の初期値ルール「毎月1日は昨日にする」に対応
-- 保存済み・手入力の基準日を出力時に優先
+- 基準日は常に実行日の前日を使う
+- 帳票出力時は保存済み・手入力の基準日ではなく、その時点の昨日を優先
 - 日付抽出条件ごとに月次・年次などの期間ルールを設定可能
 - 500件超のレコード取得にカーソルAPIで対応
 
@@ -77,6 +78,7 @@ dist/kintone-excel-report-plugin.zip
 - 帳票名フィールドコード: `report_name`
 - 完成版テンプレート添付フィールドコード: `completed_template`
 - 取得元アプリ設定JSONフィールドコード: `sources_json`
+- 紐づく帳票出力アプリID: 帳票出力アプリのアプリID
 
 操作手順:
 
@@ -129,9 +131,9 @@ dist/kintone-excel-report-plugin.zip
 4. レコード詳細画面で `Excel帳票出力` ボタンを押す
 5. 完成版テンプレートにkintoneデータが書き込まれた `.xlsx` がダウンロードされる
 
-基準日の初期値ルールは、レコード追加時に空の基準日へ初期値を入れるための設定です。保存済みの値や利用者が手入力した値は、出力時にもそのまま使います。編集画面の `基準日を自動設定` を押した場合だけ、設定ルールで基準日を再設定します。
+基準日は、前日までの営業実績を対象にするため常に実行日の前日を使います。レコード追加時には昨日の日付を初期表示し、Excel出力時も保存済みの値や利用者が手入力した値ではなく、その時点の昨日をリアルタイムに計算して使い、出力後にレコードへ保存します。
 
-標準設定では、通常日は当日、毎月1日だけ前日（前月末）を初期値にします。たとえば `2026-08-01` に作成すると `2026-07-31`、`2026-08-03` に保存済みの `2026-07-31` を開いて出力すると、その保存値を使用します。
+たとえば `2026-07-30` に出力すると基準日は `2026-07-29`、`2026-08-01` に出力すると基準日は `2026-07-31`、`2026-08-03` に保存済みの `2026-07-31` を開いて出力すると基準日は `2026-08-02` になります。
 
 ### よくあるつまずき
 
@@ -160,22 +162,51 @@ dist/kintone-excel-report-plugin.zip
 - `appId`: 取得元kintoneアプリID
 - `sheetName`: Excel内の書き込み先シート名
 - `fields`: 出力するフィールドコードと見出し
-- `filters`: 抽出条件。対象店舗、基準日から計算する期間、基準日、固定値を複数指定可能
+- `filters`: 抽出条件。対象店舗、基準日から計算する期間、基準日、出力アプリの任意フィールド、固定値を複数指定可能
 - `sorts`: 並び順。複数フィールドを指定可能
 
 抽出条件を1行も設定しなければ、その取得元アプリは全件取得します。画面で追加した条件はすべてANDで結合されます。
+
+取得元アプリのフィールドを帳票出力アプリの任意フィールドで絞り込む場合は、`valueFrom: "outputField"` と `outputField` を使います。
+
+```json
+{ "field": "店舗ID", "operator": "=", "valueFrom": "outputField", "outputField": "store_id", "valueType": "text" }
+```
 
 正式なJSON形式は `filters` / `sorts` のみです。開発初期版の `dateField` / `storeField` / `sort` / `periodRule` / `additionalQuery`、または `valueFrom: "period"` を含むJSONは読み込まず、簡易生成UIでの作り直しを案内します。
 
 日付条件の `dateRule`:
 
 - `sameDay`: 基準日と同じ日
+- `previousDay`: 基準日の前日
+- `nextDay`: 基準日の翌日
+- `baseWeek`: 基準日の週（日曜から土曜）
+- `previousWeek`: 基準日の前週
+- `nextWeek`: 基準日の翌週
+- `baseMonthStart`: 基準日の同月1日
+- `baseMonthEnd`: 基準日の同月末
 - `monthStartToBaseDate`: 基準日の月初から基準日
-- `yearStartToBaseDate`: 1月1日から基準日
 - `baseMonth`: 基準日の月初から月末
+- `previousMonthStart`: 基準日の前月1日
+- `previousMonthEnd`: 基準日の前月末
 - `previousMonth`: 基準日の前月
+- `nextMonthStart`: 基準日の翌月1日
+- `nextMonthEnd`: 基準日の翌月末
 - `nextMonth`: 基準日の翌月
 - `baseMonthToNextMonthEnd`: 基準日の月初から翌月末
+- `baseYearStart`: 基準日の同年1月1日
+- `baseYearEnd`: 基準日の同年12月31日
+- `yearStartToBaseDate`: 1月1日から基準日
+- `baseYear`: 基準日の同年
+- `previousYearStart`: 基準日の前年1月1日
+- `previousYearEnd`: 基準日の前年12月31日
+- `previousYear`: 基準日の前年
+- `nextYearStart`: 基準日の翌年1月1日
+- `nextYearEnd`: 基準日の翌年12月31日
+- `nextYear`: 基準日の翌年
+- `sameDayPreviousYear`: 基準日の前年同日
+- `sameMonthPreviousYear`: 基準日の前年同月
+- `previousMonthPreviousYear`: 基準日の前月の前年同月
 
 ## 注意
 

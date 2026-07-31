@@ -1,27 +1,51 @@
 export type PluginMode = 'template' | 'output';
 
-export type BaseDateRule = 'today' | 'firstDayUsesYesterday' | 'yesterday' | 'manual';
+export type BaseDateRule = 'yesterday';
 
 export type DateRangeRule =
   | 'sameDay'
+  | 'previousDay'
+  | 'nextDay'
+  | 'baseWeek'
+  | 'previousWeek'
+  | 'nextWeek'
   | 'monthStartToBaseDate'
   | 'yearStartToBaseDate'
+  | 'baseMonthStart'
+  | 'baseMonthEnd'
   | 'baseMonth'
+  | 'previousMonthStart'
+  | 'previousMonthEnd'
   | 'previousMonth'
+  | 'nextMonthStart'
+  | 'nextMonthEnd'
   | 'nextMonth'
-  | 'baseMonthToNextMonthEnd';
+  | 'baseMonthToNextMonthEnd'
+  | 'baseYearStart'
+  | 'baseYearEnd'
+  | 'baseYear'
+  | 'previousYearStart'
+  | 'previousYearEnd'
+  | 'previousYear'
+  | 'nextYearStart'
+  | 'nextYearEnd'
+  | 'nextYear'
+  | 'sameDayPreviousYear'
+  | 'sameMonthPreviousYear'
+  | 'previousMonthPreviousYear';
 
 export type SourceFieldValueType = 'text' | 'number' | 'date' | 'datetime' | 'boolean';
 
 export type SourceFilterOperator = '=' | '!=' | '>' | '>=' | '<' | '<=' | 'like' | 'not like' | 'in' | 'not in' | 'between';
 
-export type SourceFilterValueFrom = 'store' | 'dateRange' | 'baseDate' | 'fixed';
+export type SourceFilterValueFrom = 'store' | 'dateRange' | 'baseDate' | 'outputField' | 'fixed';
 
 export interface SourceFilterConfig {
   field: string;
   operator: SourceFilterOperator;
   valueFrom: SourceFilterValueFrom;
   value?: string;
+  outputField?: string;
   valueType?: 'text' | 'number';
   dateRule?: DateRangeRule;
 }
@@ -63,6 +87,7 @@ export interface PluginConfig {
   templateReportNameField: string;
   templateAttachmentField: string;
   templateSourcesJsonField: string;
+  outputAppId: string;
   outputReportIdField: string;
   outputStoreField: string;
   outputBaseDateField: string;

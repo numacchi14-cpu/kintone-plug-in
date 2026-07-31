@@ -38,19 +38,44 @@ try {
     })
   ]);
 
-  const { resolveBaseDate } = await import(pathToFileURL(dateRulesOutput).href);
+  const { calculateDateRange, resolveBaseDate } = await import(pathToFileURL(dateRulesOutput).href);
   const { buildSourceQuery } = await import(pathToFileURL(queryOutput).href);
   const { createInitialTemplate, fillReportTemplate, validateReportTemplate } = require(excelOutput);
 
   assertEqual(
-    resolveBaseDate('firstDayUsesYesterday', new Date(2026, 7, 1), ''),
+    resolveBaseDate('yesterday', new Date(2026, 7, 1), ''),
     '2026-07-31',
-    '毎月1日の基準日'
+    '常に昨日の基準日'
   );
   assertEqual(
-    resolveBaseDate('today', new Date(2026, 7, 3), '2026-07-31'),
-    '2026-07-31',
-    '保存済み基準日の優先'
+    resolveBaseDate('yesterday', new Date(2026, 7, 3), ''),
+    '2026-08-02',
+    '通常日の昨日基準日'
+  );
+  assertDeepEqual(
+    calculateDateRange('baseWeek', '2026-07-15'),
+    { start: '2026-07-12', end: '2026-07-18' },
+    '基準日の週'
+  );
+  assertDeepEqual(
+    calculateDateRange('baseMonthEnd', '2026-07-15'),
+    { start: '2026-07-31', end: '2026-07-31' },
+    '基準日の同月末'
+  );
+  assertDeepEqual(
+    calculateDateRange('baseYear', '2026-07-15'),
+    { start: '2026-01-01', end: '2026-12-31' },
+    '基準日の同年'
+  );
+  assertDeepEqual(
+    calculateDateRange('previousMonthPreviousYear', '2026-08-02'),
+    { start: '2025-07-01', end: '2025-07-31' },
+    '基準日の前月の前年同月'
+  );
+  assertDeepEqual(
+    calculateDateRange('sameDayPreviousYear', '2024-02-29'),
+    { start: '2023-02-28', end: '2023-02-28' },
+    'うるう日の前年同日'
   );
 
   const source = (dateRule) => ({
@@ -75,6 +100,26 @@ try {
     buildSourceQuery(source('yearStartToBaseDate'), '福岡本店', '2026-07-31'),
     '店舗名 = "福岡本店" and 日付 >= "2026-01-01" and 日付 <= "2026-07-31" order by 日付 asc',
     '年次クエリ'
+  );
+  assertEqual(
+    buildSourceQuery(
+      {
+        ...source('monthStartToBaseDate'),
+        filters: [
+          { field: '店舗ID', operator: '=', valueFrom: 'outputField', outputField: 'store_id', valueType: 'text' },
+          { field: '営業部', operator: '=', valueFrom: 'outputField', outputField: 'department', valueType: 'text' },
+          { field: '日付', operator: 'between', valueFrom: 'dateRange', valueType: 'text', dateRule: 'previousMonthPreviousYear' }
+        ]
+      },
+      '',
+      '2026-08-02',
+      {
+        store_id: { type: 'SINGLE_LINE_TEXT', value: 'S001' },
+        department: { type: 'SINGLE_LINE_TEXT', value: '西日本' }
+      }
+    ),
+    '店舗ID = "S001" and 営業部 = "西日本" and 日付 >= "2025-07-01" and 日付 <= "2025-07-31" order by 日付 asc',
+    '出力アプリ任意フィールド条件クエリ'
   );
 
   const excelSource = {
@@ -138,4 +183,8 @@ function assertEqual(actual, expected, label) {
   if (actual !== expected) {
     throw new Error(`${label}\nexpected: ${expected}\nactual:   ${actual}`);
   }
+}
+
+function assertDeepEqual(actual, expected, label) {
+  assertEqual(JSON.stringify(actual), JSON.stringify(expected), label);
 }

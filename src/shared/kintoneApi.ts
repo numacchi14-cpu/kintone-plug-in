@@ -180,12 +180,13 @@ export async function uploadKintoneFile(file: File): Promise<string> {
 export function buildSourceQuery(
   source: SourceAppConfig,
   storeValue: string,
-  baseDate: string
+  baseDate: string,
+  outputRecord?: KintoneRecord
 ): string {
   const conditions: string[] = [];
 
   source.filters.forEach((filter) => {
-    const condition = buildFilterCondition(filter, storeValue, baseDate);
+    const condition = buildFilterCondition(filter, storeValue, baseDate, outputRecord);
     if (condition) {
       conditions.push(condition);
     }
@@ -203,7 +204,8 @@ export function buildSourceQuery(
 function buildFilterCondition(
   filter: SourceAppConfig['filters'][number],
   storeValue: string,
-  baseDate: string
+  baseDate: string,
+  outputRecord?: KintoneRecord
 ): string {
   if (!filter.field) {
     return '';
@@ -223,7 +225,9 @@ function buildFilterCondition(
       ? storeValue
       : filter.valueFrom === 'baseDate'
         ? baseDate
-        : String(filter.value ?? '');
+        : filter.valueFrom === 'outputField'
+          ? outputFieldValue(outputRecord, filter.outputField)
+          : String(filter.value ?? '');
 
   if (!rawValue) {
     return '';
@@ -240,6 +244,15 @@ function buildFilterCondition(
 
   const operator = filter.operator === 'between' ? '=' : filter.operator;
   return `${field} ${operator} ${queryValue(rawValue, filter.valueType)}`;
+}
+
+function outputFieldValue(outputRecord: KintoneRecord | undefined, fieldCode: string | undefined): string {
+  if (!outputRecord || !fieldCode) {
+    return '';
+  }
+
+  const value = displayValue(recordValue(outputRecord, fieldCode));
+  return value == null ? '' : String(value);
 }
 
 function queryValue(value: string, valueType: 'text' | 'number' | undefined): string {

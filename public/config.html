@@ -50,9 +50,10 @@
           <ol class="krp-steps">
             <li>テンプレート管理アプリでレコードを追加します。</li>
             <li>帳票IDと帳票名を入力し、画面上部の「取得元アプリ設定JSONをかんたん作成」を開きます。</li>
+            <li>出力アプリの任意フィールドを抽出条件に使う場合は、プラグイン設定で紐づく帳票出力アプリIDを入力します。</li>
             <li>取得元アプリのアプリIDとExcelシート名を入力し、「フィールド一覧を取得」を押します。</li>
             <li>出力フィールドと削除フィールドを行き来させながら、必要ならドラッグまたは上下移動でExcelの列順を整えてJSONへ反映します。</li>
-            <li>抽出条件には対象店舗、対象期間、基準日、固定値を設定できます。日付がないアプリでは対象期間条件を追加しません。</li>
+            <li>抽出条件には対象店舗、対象期間、基準日、出力アプリの任意フィールド、固定値を設定できます。日付がないアプリでは対象期間条件を追加しません。</li>
             <li>最初は添付ファイルを空のままレコードを保存します。</li>
             <li>レコード詳細画面の「初期Excelテンプレート作成」ボタンを押します。</li>
             <li>ダウンロードされたExcelの集計シートを編集します。</li>
@@ -100,7 +101,7 @@
             <li>取得元アプリ設定JSONに、実データ取得元アプリのID、シート名、フィールドを設定します。</li>
             <li>帳票出力アプリでレコードを追加します。</li>
             <li>帳票種類には、テンプレート管理アプリの帳票IDと同じ値を入力します。</li>
-            <li>基準日は追加時に初期値が入ります。手入力または保存済みの値を出力時に優先します。</li>
+            <li>基準日は常に実行日の前日を使います。出力時も保存済みの値ではなく、その時点の昨日で計算します。</li>
             <li>期間開始・期間終了フィールドを設定すると、基準日の月初から基準日までを自動入力します。</li>
             <li>出力日時・出力者・出力ファイル名・ステータス・出力条件メモフィールドを設定すると、出力後にレコードへ保存します。</li>
             <li>出力前に「出力前チェック」を押すと、テンプレート管理レコード、完成版テンプレート、取得元設定のつながりを確認できます。</li>
@@ -124,7 +125,7 @@
         </section>
         <section class="krp-guide__section">
           <h2>取得元アプリ設定JSON</h2>
-          <p>どのkintoneアプリから、どの列を、Excelのどのシートへ書くかを指定します。</p>
+          <p>どのkintoneアプリから、どの条件で、どの列を、Excelのどのシートへ書くかを指定します。</p>
           <pre class="krp-code">[
   {
     "key": "actual",
@@ -138,7 +139,7 @@
       { "code": "実績_総売上", "label": "実績_総売上", "type": "number" }
     ],
     "filters": [
-      { "field": "店舗名", "operator": "=", "valueFrom": "store", "valueType": "text" },
+      { "field": "店舗ID", "operator": "=", "valueFrom": "outputField", "outputField": "store_id", "valueType": "text" },
       { "field": "日付", "operator": "between", "valueFrom": "dateRange", "valueType": "text", "dateRule": "monthStartToBaseDate" }
     ],
     "sorts": [
@@ -178,6 +179,10 @@
           <label class="krp-field">
             <span>取得元アプリ設定JSONフィールドコード</span>
             <input id="templateSourcesJsonField" value="sources_json" />
+          </label>
+          <label class="krp-field">
+            <span>紐づく帳票出力アプリID</span>
+            <input id="outputAppId" inputmode="numeric" placeholder="例: 456" />
           </label>
         </div>
       </section>
@@ -230,14 +235,11 @@
             <input id="outputMemoField" placeholder="例: output_memo" />
           </label>
           <label class="krp-field">
-            <span>基準日の初期値ルール</span>
+            <span>基準日の扱い</span>
             <select id="baseDateRule">
-              <option value="firstDayUsesYesterday">毎月1日は昨日にする</option>
-              <option value="today">今日を使う</option>
               <option value="yesterday">常に昨日にする</option>
-              <option value="manual">手入力のみ</option>
             </select>
-            <small>入力済みの基準日は上書きしません。レコード画面の「基準日を自動設定」で明示的に再設定できます。</small>
+            <small>前日までの営業実績を帳票対象にするため、Excel出力時は常に実行日の前日を基準日にします。</small>
           </label>
         </div>
       </section>

@@ -145,6 +145,36 @@
 
 `filters` を空配列にすると、そのアプリは全件取得します。
 
+## 出力アプリの任意フィールドで絞り込む例
+
+テンプレート管理アプリのプラグイン設定で、紐づく帳票出力アプリIDを設定しておくと、抽出条件で帳票出力アプリの任意フィールドを参照できます。複数条件はANDで結合されます。
+
+```json
+[
+  {
+    "key": "actual",
+    "label": "実績",
+    "appId": "99",
+    "sheetName": "日別計画実績",
+    "tableName": "tbl_actual",
+    "fields": [
+      { "code": "日付", "label": "日付", "type": "date" },
+      { "code": "店舗ID", "label": "店舗ID" },
+      { "code": "営業部", "label": "営業部" },
+      { "code": "実績_総売上", "label": "実績_総売上", "type": "number" }
+    ],
+    "filters": [
+      { "field": "店舗ID", "operator": "=", "valueFrom": "outputField", "outputField": "store_id", "valueType": "text" },
+      { "field": "営業部", "operator": "=", "valueFrom": "outputField", "outputField": "department", "valueType": "text" },
+      { "field": "日付", "operator": "between", "valueFrom": "dateRange", "valueType": "text", "dateRule": "previousMonthPreviousYear" }
+    ],
+    "sorts": [
+      { "field": "日付", "order": "asc" }
+    ]
+  }
+]
+```
+
 ## 店舗マスタ参照例
 
 実績データ側に店舗IDだけがあり、店舗名や営業部を店舗マスタから補いたい場合は `lookups` を使います。`fields` には最終的にExcelへ出したい列を並べます。
@@ -201,8 +231,9 @@
 | `filters` | 任意 | 複数指定できる抽出条件。空なら全件取得 |
 | `filters[].field` | 必須 | 条件に使うフィールドコード |
 | `filters[].operator` | 必須 | `=` / `!=` / `>` / `>=` / `<` / `<=` / `like` / `not like` / `in` / `not in` / `between` |
-| `filters[].valueFrom` | 必須 | `store` / `dateRange` / `baseDate` / `fixed` |
+| `filters[].valueFrom` | 必須 | `store` / `dateRange` / `baseDate` / `outputField` / `fixed` |
 | `filters[].value` | 条件付き | `fixed` の固定値。`in`系はカンマ区切り |
+| `filters[].outputField` | 条件付き | `outputField` の場合に参照する帳票出力アプリのフィールドコード |
 | `filters[].valueType` | 任意 | `text` または `number` |
 | `filters[].dateRule` | 条件付き | `dateRange` の期間計算ルール |
 | `sorts` | 任意 | 複数指定できる並び順 |
@@ -219,12 +250,35 @@
 | 値 | 意味 |
 |---|---|
 | `sameDay` | 基準日と同じ日 |
+| `previousDay` | 基準日の前日 |
+| `nextDay` | 基準日の翌日 |
+| `baseWeek` | 基準日の週（日曜から土曜） |
+| `previousWeek` | 基準日の前週（日曜から土曜） |
+| `nextWeek` | 基準日の翌週（日曜から土曜） |
+| `baseMonthStart` | 基準日の同月1日 |
+| `baseMonthEnd` | 基準日の同月末 |
 | `monthStartToBaseDate` | 基準日の月初から基準日 |
-| `yearStartToBaseDate` | 1月1日から基準日 |
 | `baseMonth` | 基準日の月初から月末 |
+| `previousMonthStart` | 基準日の前月1日 |
+| `previousMonthEnd` | 基準日の前月末 |
 | `previousMonth` | 基準日の前月 |
+| `nextMonthStart` | 基準日の翌月1日 |
+| `nextMonthEnd` | 基準日の翌月末 |
 | `nextMonth` | 基準日の翌月 |
 | `baseMonthToNextMonthEnd` | 基準日の月初から翌月末 |
+| `baseYearStart` | 基準日の同年1月1日 |
+| `baseYearEnd` | 基準日の同年12月31日 |
+| `yearStartToBaseDate` | 1月1日から基準日 |
+| `baseYear` | 基準日の同年 |
+| `previousYearStart` | 基準日の前年1月1日 |
+| `previousYearEnd` | 基準日の前年12月31日 |
+| `previousYear` | 基準日の前年 |
+| `nextYearStart` | 基準日の翌年1月1日 |
+| `nextYearEnd` | 基準日の翌年12月31日 |
+| `nextYear` | 基準日の翌年 |
+| `sameDayPreviousYear` | 基準日の前年同日 |
+| `sameMonthPreviousYear` | 基準日の前年同月 |
+| `previousMonthPreviousYear` | 基準日の前月の前年同月 |
 
 ## 注意
 

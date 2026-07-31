@@ -13,7 +13,7 @@ import type {
 type RawPluginConfig = Record<string, string>;
 
 const pluginModes: PluginMode[] = ['template', 'output'];
-const baseDateRules: BaseDateRule[] = ['today', 'firstDayUsesYesterday', 'yesterday', 'manual'];
+const baseDateRules: BaseDateRule[] = ['yesterday'];
 const sourceFieldValueTypes: SourceFieldValueType[] = ['text', 'number', 'date', 'datetime', 'boolean'];
 const sourceFilterOperators: SourceFilterOperator[] = [
   '=',
@@ -28,15 +28,38 @@ const sourceFilterOperators: SourceFilterOperator[] = [
   'not in',
   'between'
 ];
-const sourceFilterValueFrom: SourceFilterValueFrom[] = ['store', 'dateRange', 'baseDate', 'fixed'];
+const sourceFilterValueFrom: SourceFilterValueFrom[] = ['store', 'dateRange', 'baseDate', 'outputField', 'fixed'];
 const dateRangeRules: DateRangeRule[] = [
   'sameDay',
+  'previousDay',
+  'nextDay',
+  'baseWeek',
+  'previousWeek',
+  'nextWeek',
   'monthStartToBaseDate',
   'yearStartToBaseDate',
+  'baseMonthStart',
+  'baseMonthEnd',
   'baseMonth',
+  'previousMonthStart',
+  'previousMonthEnd',
   'previousMonth',
+  'nextMonthStart',
+  'nextMonthEnd',
   'nextMonth',
-  'baseMonthToNextMonthEnd'
+  'baseMonthToNextMonthEnd',
+  'baseYearStart',
+  'baseYearEnd',
+  'baseYear',
+  'previousYearStart',
+  'previousYearEnd',
+  'previousYear',
+  'nextYearStart',
+  'nextYearEnd',
+  'nextYear',
+  'sameDayPreviousYear',
+  'sameMonthPreviousYear',
+  'previousMonthPreviousYear'
 ];
 
 export function parsePluginConfig(raw: RawPluginConfig | null | undefined): PluginConfig {
@@ -54,6 +77,7 @@ export function parsePluginConfig(raw: RawPluginConfig | null | undefined): Plug
     templateReportNameField: data.templateReportNameField ?? defaultConfig.templateReportNameField,
     templateAttachmentField: data.templateAttachmentField ?? defaultConfig.templateAttachmentField,
     templateSourcesJsonField: data.templateSourcesJsonField ?? defaultConfig.templateSourcesJsonField,
+    outputAppId: data.outputAppId ?? defaultConfig.outputAppId,
     outputReportIdField: data.outputReportIdField ?? defaultConfig.outputReportIdField,
     outputStoreField: data.outputStoreField ?? defaultConfig.outputStoreField,
     outputBaseDateField: data.outputBaseDateField ?? defaultConfig.outputBaseDateField,
@@ -77,6 +101,7 @@ export function serializePluginConfig(config: PluginConfig): RawPluginConfig {
     templateReportNameField: config.templateReportNameField,
     templateAttachmentField: config.templateAttachmentField,
     templateSourcesJsonField: config.templateSourcesJsonField,
+    outputAppId: config.outputAppId,
     outputReportIdField: config.outputReportIdField,
     outputStoreField: config.outputStoreField,
     outputBaseDateField: config.outputBaseDateField,
@@ -183,6 +208,11 @@ function normalizeSources(parsed: SourceAppConfig[], fallback: SourceAppConfig[]
                   dateRule: dateRangeRules.includes(filter.dateRule as DateRangeRule)
                     ? (filter.dateRule as DateRangeRule)
                     : 'sameDay'
+                }
+              : {}),
+            ...(valueFrom === 'outputField'
+              ? {
+                  outputField: filter.outputField == null ? '' : String(filter.outputField)
                 }
               : {})
           };

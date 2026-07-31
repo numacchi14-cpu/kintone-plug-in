@@ -38,8 +38,8 @@ kintone.events.on(['app.record.create.show'], (event: any) => {
   }
 
   const field = event.record[pluginConfig.outputBaseDateField];
-  if (field && !field.value && pluginConfig.baseDateRule !== 'manual') {
-    field.value = resolveBaseDate(pluginConfig.baseDateRule);
+  if (field) {
+    field.value = resolveBaseDate('yesterday');
   }
 
   return event;
@@ -226,10 +226,10 @@ function renderIndexRecordPicker(config: PluginConfig, records: KintoneRecord[])
 
     const reportType = String(recordValue(record, config.outputReportIdField) || '');
     const store = String(recordValue(record, config.outputStoreField) || '');
-    const baseDate = String(recordValue(record, config.outputBaseDateField) || '');
+    const baseDate = resolveBaseDate('yesterday');
 
     const text = document.createElement('span');
-    text.textContent = `No.${id} ${[reportType, store, baseDate].filter(Boolean).join(' / ')}`;
+    text.textContent = `No.${id} ${[reportType, store, `基準日:${baseDate}`].filter(Boolean).join(' / ')}`;
 
     label.append(checkbox, text);
     list.append(label);
@@ -375,7 +375,7 @@ async function validateCompletedTemplate(
   const fileKey = resolveCompletedTemplateFileKey(attachments);
 
   setStatus('取得元アプリ設定を検証中...');
-  await validateSourceConfigs(sources);
+  await validateSourceConfigs(config, sources);
 
   setStatus('完成版テンプレートを取得中...');
   const templateBuffer = await downloadKintoneFile(fileKey);
@@ -401,10 +401,6 @@ async function fetchCurrentRecord(): Promise<{ record?: KintoneRecord }> {
 }
 
 function renderBaseDateUpdateButton(config: PluginConfig): void {
-  if (config.baseDateRule === 'manual') {
-    return;
-  }
-
   const header = kintone.app.record.getHeaderMenuSpaceElement();
   if (!header || header.querySelector('[data-krp-base-date-tool="true"]')) {
     return;
@@ -417,8 +413,8 @@ function renderBaseDateUpdateButton(config: PluginConfig): void {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'krp-button krp-button--secondary';
-  button.textContent = '基準日を自動設定';
-  button.title = 'プラグイン設定の初期値ルールで基準日を再設定します';
+  button.textContent = '基準日を昨日に更新';
+  button.title = '基準日を実行日の前日に更新します';
   button.addEventListener('click', () => {
     const current = kintone.app.record.get();
     const field = current?.record?.[config.outputBaseDateField];
@@ -427,7 +423,7 @@ function renderBaseDateUpdateButton(config: PluginConfig): void {
       return;
     }
 
-    field.value = resolveBaseDate(config.baseDateRule, new Date(), '');
+    field.value = resolveBaseDate('yesterday', new Date(), '');
     applyOutputPeriodDefaults(config, current.record, true);
     kintone.app.record.set(current);
   });
@@ -450,23 +446,64 @@ function renderSourceJsonBuilder(config: PluginConfig): void {
     <summary>取得元アプリ設定JSONをかんたん作成</summary>
     <div class="krp-builder__actions">
       <button type="button" data-krp-action="add-source">取得元アプリを追加</button>
+      <button type="button" data-krp-action="import-output-fields">出力アプリのフィールド一覧を取得</button>
       <button type="button" data-krp-action="apply-json">JSONをフィールドへ反映</button>
       <button type="button" data-krp-action="load-json">現在のJSONを読み込む</button>
+      <span class="krp-builder__source-status" data-krp-builder="outputFieldStatus"></span>
     </div>
+    <datalist id="krp-output-field-codes" data-krp-builder="outputFieldCodes"></datalist>
     <div data-krp-builder="sources"></div>
-    <p class="krp-builder__note">反映後は、このレコードを保存してください。取得元アプリは複数追加できます。列順は各ブロック内の出力フィールドの行順です。</p>
+    <p class="krp-builder__note">反映後は、このレコードを保存してください。取得元アプリは複数追加できます。列順は各ブロック内の出力フィールドの行順です。出力アプリの任意フィールドを抽出条件に使う場合は、プラグイン設定で紐づく帳票出力アプリIDを設定してください。</p>
   `;
 
   const addSourceButton = panel.querySelector('[data-krp-action="add-source"]');
+  const importOutputFieldsButton = panel.querySelector('[data-krp-action="import-output-fields"]');
   const applyButton = panel.querySelector('[data-krp-action="apply-json"]');
   const loadButton = panel.querySelector('[data-krp-action="load-json"]');
 
   addSourceButton?.addEventListener('click', () => addBuilderSourceBlock(panel));
+  importOutputFieldsButton?.addEventListener('click', async () => importOutputFields(config, panel));
   applyButton?.addEventListener('click', () => applyBuilderJson(config, panel));
   loadButton?.addEventListener('click', () => loadBuilderJson(config, panel));
 
   header.appendChild(panel);
   addBuilderSourceBlock(panel);
+}
+
+async function importOutputFields(config: PluginConfig, panel: HTMLElement): Promise<void> {
+  const status = panel.querySelector('[data-krp-builder="outputFieldStatus"]');
+  const datalist = panel.querySelector('[data-krp-builder="outputFieldCodes"]');
+  if (!(datalist instanceof HTMLDataListElement)) {
+    return;
+  }
+
+  if (!config.outputAppId) {
+    window.alert('プラグイン設定で「紐づく帳票出力アプリID」を入力してください。');
+    return;
+  }
+
+  try {
+    if (status) {
+      status.textContent = '出力アプリのフィールド一覧を取得中...';
+    }
+    const result = await getSourceAppFields(config.outputAppId);
+    datalist.replaceChildren(
+      ...result.fields.map((field) => {
+        const option = document.createElement('option');
+        option.value = field.code;
+        option.label = field.label;
+        return option;
+      })
+    );
+    if (status) {
+      status.textContent = `出力アプリ ${config.outputAppId}: ${result.fields.length}件取得 / ${result.skippedCount}件除外`;
+    }
+  } catch (error) {
+    if (status) {
+      status.textContent = '';
+    }
+    window.alert(error instanceof Error ? error.message : '出力アプリのフィールド一覧を取得できません。');
+  }
 }
 
 function addBuilderSourceBlock(panel: HTMLElement, source?: SourceAppConfig): void {
@@ -626,17 +663,52 @@ function addBuilderFilterRow(sourceBlock: HTMLElement, filter: Partial<SourceFil
       <option value="store">出力アプリの対象店舗</option>
       <option value="dateRange">基準日から期間計算</option>
       <option value="baseDate">出力アプリの基準日</option>
+      <option value="outputField">出力アプリの任意フィールド</option>
       <option value="fixed">固定値</option>
     </select>
     <select data-krp-filter="dateRule">
-      <option value="sameDay">基準日と同じ日</option>
-      <option value="monthStartToBaseDate">月初から基準日</option>
-      <option value="yearStartToBaseDate">1月1日から基準日</option>
-      <option value="baseMonth">基準日の月全体</option>
-      <option value="previousMonth">基準日の前月</option>
-      <option value="nextMonth">基準日の翌月</option>
-      <option value="baseMonthToNextMonthEnd">月初から翌月末</option>
+      <optgroup label="日">
+        <option value="sameDay">基準日</option>
+        <option value="previousDay">基準日の前日</option>
+        <option value="nextDay">基準日の翌日</option>
+      </optgroup>
+      <optgroup label="週（日曜から土曜）">
+        <option value="baseWeek">基準日の週</option>
+        <option value="previousWeek">基準日の前週</option>
+        <option value="nextWeek">基準日の翌週</option>
+      </optgroup>
+      <optgroup label="月">
+        <option value="baseMonthStart">基準日の同月1日</option>
+        <option value="baseMonthEnd">基準日の同月末</option>
+        <option value="monthStartToBaseDate">基準日の同月1日から基準日</option>
+        <option value="baseMonth">基準日の同月</option>
+        <option value="previousMonthStart">基準日の前月1日</option>
+        <option value="previousMonthEnd">基準日の前月末</option>
+        <option value="previousMonth">基準日の前月</option>
+        <option value="nextMonthStart">基準日の翌月1日</option>
+        <option value="nextMonthEnd">基準日の翌月末</option>
+        <option value="nextMonth">基準日の翌月</option>
+        <option value="baseMonthToNextMonthEnd">基準日の同月1日から翌月末</option>
+      </optgroup>
+      <optgroup label="年">
+        <option value="baseYearStart">基準日の同年1月1日</option>
+        <option value="baseYearEnd">基準日の同年12月31日</option>
+        <option value="yearStartToBaseDate">基準日の同年1月1日から基準日</option>
+        <option value="baseYear">基準日の同年</option>
+        <option value="previousYearStart">基準日の前年1月1日</option>
+        <option value="previousYearEnd">基準日の前年12月31日</option>
+        <option value="previousYear">基準日の前年</option>
+        <option value="nextYearStart">基準日の翌年1月1日</option>
+        <option value="nextYearEnd">基準日の翌年12月31日</option>
+        <option value="nextYear">基準日の翌年</option>
+      </optgroup>
+      <optgroup label="前年比較">
+        <option value="sameDayPreviousYear">基準日の前年同日</option>
+        <option value="sameMonthPreviousYear">基準日の前年同月</option>
+        <option value="previousMonthPreviousYear">基準日の前月の前年同月</option>
+      </optgroup>
     </select>
+    <input data-krp-filter="outputField" list="krp-output-field-codes" placeholder="出力アプリのフィールドコード" value="${escapeHtml(filter.outputField ?? '')}">
     <input data-krp-filter="value" placeholder="固定値。複数はカンマ区切り" value="${escapeHtml(filter.value ?? '')}">
     <select data-krp-filter="valueType">
       <option value="text">文字・日付</option>
@@ -648,6 +720,7 @@ function addBuilderFilterRow(sourceBlock: HTMLElement, filter: Partial<SourceFil
   const operator = row.querySelector('[data-krp-filter="operator"]');
   const valueFrom = row.querySelector('[data-krp-filter="valueFrom"]');
   const dateRule = row.querySelector('[data-krp-filter="dateRule"]');
+  const outputField = row.querySelector('[data-krp-filter="outputField"]');
   const valueType = row.querySelector('[data-krp-filter="valueType"]');
   if (operator instanceof HTMLSelectElement) {
     operator.value = filter.operator ?? '=';
@@ -657,6 +730,9 @@ function addBuilderFilterRow(sourceBlock: HTMLElement, filter: Partial<SourceFil
   }
   if (dateRule instanceof HTMLSelectElement) {
     dateRule.value = filter.dateRule ?? 'monthStartToBaseDate';
+  }
+  if (outputField instanceof HTMLInputElement) {
+    outputField.value = filter.outputField ?? '';
   }
   if (valueType instanceof HTMLSelectElement) {
     valueType.value = filter.valueType ?? 'text';
@@ -672,6 +748,7 @@ function syncBuilderFilterRow(row: HTMLElement): void {
   const operator = row.querySelector('[data-krp-filter="operator"]');
   const valueFrom = row.querySelector('[data-krp-filter="valueFrom"]');
   const dateRule = row.querySelector('[data-krp-filter="dateRule"]');
+  const outputField = row.querySelector('[data-krp-filter="outputField"]');
   const value = row.querySelector('[data-krp-filter="value"]');
 
   if (!(operator instanceof HTMLSelectElement) || !(valueFrom instanceof HTMLSelectElement)) {
@@ -689,6 +766,12 @@ function syncBuilderFilterRow(row: HTMLElement): void {
   if (dateRule instanceof HTMLSelectElement) {
     dateRule.hidden = !usesDateRange;
     dateRule.disabled = !usesDateRange;
+  }
+
+  if (outputField instanceof HTMLInputElement) {
+    const usesOutputField = valueFrom.value === 'outputField';
+    outputField.hidden = !usesOutputField;
+    outputField.disabled = !usesOutputField;
   }
 
   if (value instanceof HTMLInputElement) {
@@ -1197,6 +1280,9 @@ function readBuilderSource(sourceBlock: Element, sourceNumber: number): SourceAp
     if (valueFrom === 'dateRange') {
       filter.dateRule = getBuilderControlValue(row, 'filter', 'dateRule') as SourceFilterConfig['dateRule'];
     }
+    if (valueFrom === 'outputField') {
+      filter.outputField = getBuilderControlValue(row, 'filter', 'outputField');
+    }
     filters.push(filter);
   });
 
@@ -1321,9 +1407,9 @@ async function exportReport(
   const fileKey = resolveCompletedTemplateFileKey(attachments);
 
   setStatus('取得元アプリ設定を検証中...');
-  await validateSourceConfigs(sources);
+  await validateSourceConfigs(config, sources);
 
-  const sourceRows = await fetchSourceRows(sources, store, baseDate, setStatus);
+  const sourceRows = await fetchSourceRows(sources, store, baseDate, record, setStatus);
   const wholeRange = mergeSourceRanges(sourceRows, baseDate);
   const exportedAt = formatDateTime(new Date());
   const context: ReportContext = {
@@ -1364,12 +1450,12 @@ async function validateOutputReadiness(
   const fileKey = resolveCompletedTemplateFileKey(attachments);
 
   setStatus('取得元アプリ設定を検証中...');
-  await validateSourceConfigs(sources);
+  await validateSourceConfigs(config, sources);
 
   setStatus('取得クエリを確認中...');
   sources.forEach((source) => {
     sourceDateRange(source, baseDate);
-    buildSourceQuery(source, store, baseDate);
+    buildSourceQuery(source, store, baseDate, record);
   });
 
   setStatus('Excelテンプレートを取得中...');
@@ -1388,8 +1474,7 @@ function resolveOutputConditions(
 ): { reportId: string; store: string; baseDate: string } {
   const reportId = String(recordValue(record, config.outputReportIdField) || '');
   const store = String(recordValue(record, config.outputStoreField) || '');
-  const currentBaseDate = String(recordValue(record, config.outputBaseDateField) || '');
-  const baseDate = resolveBaseDate(config.baseDateRule, new Date(), currentBaseDate);
+  const baseDate = resolveBaseDate('yesterday', new Date(), '');
 
   if (!reportId) {
     throw new Error(
@@ -1400,10 +1485,6 @@ function resolveOutputConditions(
       ].join('')
     );
   }
-  if (!baseDate) {
-    throw new Error('基準日が未入力です。');
-  }
-
   return { reportId, store, baseDate };
 }
 
@@ -1433,6 +1514,7 @@ async function fetchSourceRows(
   sources: SourceAppConfig[],
   store: string,
   baseDate: string,
+  outputRecord: KintoneRecord,
   setStatus: (message: string) => void = () => undefined
 ): Promise<SourceRows[]> {
   const results: SourceRows[] = [];
@@ -1445,7 +1527,7 @@ async function fetchSourceRows(
     const sourceLabel = source.label || source.key || `取得元${index + 1}`;
     setStatus(`取得中: ${sourceLabel}`);
     const range = sourceDateRange(source, baseDate);
-    const query = buildSourceQuery(source, store, baseDate);
+    const query = buildSourceQuery(source, store, baseDate, outputRecord);
     const lookupFieldCodes = new Set(source.lookups.flatMap((lookup) => lookup.masterFields.map((field) => field.code)));
     const fieldCodes = [
       ...source.fields.filter((field) => !lookupFieldCodes.has(field.code)).map((field) => field.code),
@@ -1480,8 +1562,27 @@ async function fetchSourceRows(
   return results;
 }
 
-async function validateSourceConfigs(sources: SourceAppConfig[]): Promise<void> {
+async function validateSourceConfigs(config: PluginConfig, sources: SourceAppConfig[]): Promise<void> {
   const errors: string[] = [];
+  const outputAppId = config.outputAppId || (config.mode === 'output' ? String(kintone.app.getId?.() || '') : '');
+  const outputFieldFilters = sources.flatMap((source) =>
+    source.filters
+      .filter((filter) => filter.valueFrom === 'outputField')
+      .map((filter) => ({ source, filter }))
+  );
+
+  let outputFieldCodes: Set<string> | null = null;
+  if (outputFieldFilters.length) {
+    if (!outputAppId) {
+      errors.push('出力アプリの任意フィールドを抽出条件に使う場合は、紐づく帳票出力アプリIDを設定してください。');
+    } else {
+      try {
+        outputFieldCodes = new Set((await getSourceAppFields(outputAppId)).fields.map((field) => field.code));
+      } catch {
+        errors.push(`帳票出力アプリ（アプリID: ${outputAppId}）が存在しない、または閲覧権限がありません。`);
+      }
+    }
+  }
 
   for (const source of sources) {
     const sourceLabel = source.label || source.key || source.sheetName;
@@ -1499,6 +1600,18 @@ async function validateSourceConfigs(sources: SourceAppConfig[]): Promise<void> 
     }
 
     const sourceFieldCodes = new Set(sourceFields.map((field) => field.code));
+    if (outputFieldCodes) {
+      source.filters
+        .filter((filter) => filter.valueFrom === 'outputField')
+        .forEach((filter) => {
+          if (!filter.outputField) {
+            errors.push(`取得元アプリ「${sourceLabel}」の抽出条件に出力アプリのフィールドコードが指定されていません。`);
+          } else if (!outputFieldCodes?.has(filter.outputField)) {
+            errors.push(`帳票出力アプリにフィールド「${filter.outputField}」が存在しません。`);
+          }
+        });
+    }
+
     const lookupOutputFields = new Set(source.lookups.flatMap((lookup) => lookup.masterFields.map((field) => field.code)));
     const requiredSourceFields = [
       ...source.fields.filter((field) => !lookupOutputFields.has(field.code)).map((field) => field.code),
@@ -1642,6 +1755,7 @@ async function saveOutputHistory(config: PluginConfig, context: ReportContext, f
   const appId = kintone.app.getId?.();
   const record: Record<string, { value: string }> = {};
 
+  addHistoryField(record, config.outputBaseDateField, context.baseDate);
   addHistoryField(record, config.outputPeriodStartField, context.periodStart);
   addHistoryField(record, config.outputPeriodEndField, context.periodEnd);
   addHistoryField(record, config.outputExportedAtField, context.exportedAt);

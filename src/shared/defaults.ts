@@ -59,6 +59,7 @@ export const defaultConfig: PluginConfig = {
   templateReportNameField: 'report_name',
   templateAttachmentField: 'completed_template',
   templateSourcesJsonField: 'sources_json',
+  outputAppId: '',
   outputReportIdField: 'report_type',
   outputStoreField: 'store',
   outputBaseDateField: 'base_date',
@@ -69,6 +70,6 @@ export const defaultConfig: PluginConfig = {
   outputFileNameField: '',
   outputStatusField: '',
   outputMemoField: '',
-  baseDateRule: 'firstDayUsesYesterday',
+  baseDateRule: 'yesterday',
   sources: defaultSources
 };
