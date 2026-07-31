@@ -177,6 +177,8 @@ kintone.events.on(['app.record.index.show'], (event: any) => {
     }
     await runWithStatus(button, status, async (setStatus) => {
       await exportSelectedReports(pluginConfig, records, 'yesterday', setStatus);
+      setStatus('出力が完了しました。画面を更新します...');
+      reloadPageSoon();
     });
   });
 
@@ -335,6 +337,12 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+function reloadPageSoon(delayMs = 800): void {
+  window.setTimeout(() => {
+    window.location.reload();
+  }, delayMs);
+}
+
 async function generateInitialTemplate(config: PluginConfig, record: KintoneRecord): Promise<void> {
   const reportName = String(recordValue(record, config.templateReportNameField) || 'Excel帳票テンプレート');
   const sources = resolveTemplateSources(config, record);
@@ -375,7 +383,7 @@ async function updateCompletedTemplateAttachment(
   });
 
   setStatus('完成版テンプレート添付を更新しました。');
-  window.alert('完成版テンプレート添付を更新しました。画面を再読み込みすると添付欄にも反映されます。');
+  reloadPageSoon();
 }
 
 function chooseXlsxFile(): Promise<File | null> {
