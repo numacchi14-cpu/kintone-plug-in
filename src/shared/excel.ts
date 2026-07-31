@@ -287,7 +287,9 @@ function applySourceTable(worksheet: ExcelJS.Worksheet, sourceResult: SourceRows
       name: field.label || field.code,
       filterButton: false
     })),
-    rows: rows.map((row) => source.fields.map((field) => normalizeCellValue(row[field.code])))
+    rows: rows.length
+      ? rows.map((row) => source.fields.map((field) => normalizeCellValue(row[field.code])))
+      : [source.fields.map(() => '')]
   });
 }
 
@@ -312,14 +314,15 @@ function uniqueTableName(value: string, usedTableNames: Set<string>): string {
 }
 
 function sanitizeExcelTableName(value: string): string {
+  // Excelのテーブル名(定義された名前)は日本語などのUnicode文字を許容するため、
+  // 半角英数字だけに絞らず \p{L}(文字)・\p{N}(数字)・_ を残す。
   const sanitized = value
     .trim()
-    .replace(/[^A-Za-z0-9_]+/g, '_')
+    .replace(/[^\p{L}\p{N}_]+/gu, '_')
     .replace(/^_+|_+$/g, '');
   const candidate = sanitized || 'source';
-  const withPrefix = /^[A-Za-z_]/.test(candidate) && !/^[A-Za-z]{1,3}[0-9]{1,7}$/.test(candidate)
-    ? candidate
-    : `tbl_${candidate}`;
+  const looksLikeCellReference = /^[A-Za-z]{1,3}[0-9]{1,7}$/.test(candidate);
+  const withPrefix = /^[\p{L}_]/u.test(candidate) && !looksLikeCellReference ? candidate : `tbl_${candidate}`;
   return withPrefix.slice(0, 255);
 }
 

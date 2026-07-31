@@ -644,7 +644,7 @@ npm.cmd run package
 成果物:
 
 ```text
-dist/kintone-excel-report-plugin-v0.14.0.zip
+dist/kintone-excel-report-plugin-v0.14.1.zip
 dist/kintone-excel-report-plugin.zip
 ```
 
@@ -678,6 +678,8 @@ dist/kintone-excel-report-plugin.zip
 - `writeSourceSheet` / `writeSettingsSheet` で使っていたExcelJSの `spliceRows` は、削除範囲がシート末尾まで達する呼び出しだと実際には削除しないことを確認した。今回の取得件数・取得元アプリ数が前回より少ない場合に古い行が残る不具合があったため、新データ書き込み後に残った行を明示的に空値化する `clearLeftoverRows` に置き換えて修正した。
 - `writeSourceSheet` で、セルへの直接書き込みとExcelテーブル生成(`addTable`内部の書き込み)が同じ範囲へ二重に値を書き込んでいたため、セル直接書き込みを削除し、テーブル生成側の書き込みに一本化した。
 - マスタ参照(`lookups`)のキー収集で、同じキーが多数の行で共有される場合に重複したままカーソルAPIへ問い合わせていたため、重複除去してから問い合わせるようにした。
+- `sanitizeExcelTableName`(`src/shared/excel.ts`)が半角英数字以外(日本語などのUnicode文字)を全て `_` に置き換えていたため、`tableName` に日本語を含めると意図した名前(例: `見通しTable`)にならず、実際には別の名前(例: `Table`)になっていた。Excelのテーブル名は日本語などのUnicode文字を使えるため、`\p{L}`(Unicode文字)・`\p{N}`(数字)・`_` を残すように修正した。
+- 初期Excelテンプレート作成時は取得件数が常に0件のため、ヘッダー行のみ・データ行0件のExcelテーブルを生成していた。データ行0件のテーブルはExcelの仕様上不正になり、開いたときに修復ダイアログが出る原因になっていたため、データ行が0件の場合は空欄1行を補って最低1データ行を確保するようにした。
 
 ## 今後の拡張候補
 
