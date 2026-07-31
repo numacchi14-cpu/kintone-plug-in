@@ -30,6 +30,7 @@ declare const kintone: any;
 const pluginId = kintone.$PLUGIN_ID;
 const pluginConfig = parsePluginConfig(kintone.plugin.app.getConfig(pluginId));
 let sourceBlockSequence = 0;
+const indexRecordPickerSelection = new Map<string, KintoneRecord>();
 
 kintone.events.on(['app.record.create.show'], (event: any) => {
   if (pluginConfig.mode !== 'output') {
@@ -129,6 +130,8 @@ kintone.events.on(['app.record.index.show'], (event: any) => {
     return event;
   }
 
+  renderIndexRecordPicker(pluginConfig, (event.records ?? []) as KintoneRecord[]);
+
   const header = kintone.app.getHeaderMenuSpaceElement();
   if (!header || header.querySelector('[data-krp-index-toolbar="true"]')) {
     return event;
@@ -142,14 +145,14 @@ kintone.events.on(['app.record.index.show'], (event: any) => {
   button.type = 'button';
   button.className = 'krp-button';
   button.textContent = '選択レコードをExcel出力';
-  button.title = '一覧でチェックしたレコードをまとめてExcel出力します';
+  button.title = '下に表示されるチェック欄でレコードを選択してからクリックしてください';
 
   const status = document.createElement('span');
   status.className = 'krp-status';
   status.textContent = '帳票出力モード';
 
   button.addEventListener('click', async () => {
-    const records = (kintone.app.getSelectedRecords?.() ?? []) as KintoneRecord[];
+    const records = Array.from(indexRecordPickerSelection.values());
     if (records.length > 1 && !window.confirm(`選択した${records.length}件をExcel出力します。よろしいですか？`)) {
       return;
     }
@@ -163,13 +166,99 @@ kintone.events.on(['app.record.index.show'], (event: any) => {
   return event;
 });
 
+function renderIndexRecordPicker(config: PluginConfig, records: KintoneRecord[]): void {
+  const space = kintone.app.getHeaderSpaceElement?.();
+  if (!space) {
+    return;
+  }
+
+  indexRecordPickerSelection.clear();
+  space.querySelector('[data-krp-record-picker="true"]')?.remove();
+
+  if (!records.length) {
+    return;
+  }
+
+  const panel = document.createElement('div');
+  panel.className = 'krp-record-picker';
+  panel.dataset.krpRecordPicker = 'true';
+
+  const controls = document.createElement('div');
+  controls.className = 'krp-record-picker__controls';
+
+  const hint = document.createElement('span');
+  hint.className = 'krp-record-picker__hint';
+  hint.textContent = 'Excel出力するレコードにチェック:';
+
+  const selectAllButton = document.createElement('button');
+  selectAllButton.type = 'button';
+  selectAllButton.textContent = '全選択';
+
+  const clearAllButton = document.createElement('button');
+  clearAllButton.type = 'button';
+  clearAllButton.textContent = '全解除';
+
+  controls.append(hint, selectAllButton, clearAllButton);
+
+  const list = document.createElement('div');
+  list.className = 'krp-record-picker__list';
+
+  const checkboxes: HTMLInputElement[] = [];
+  for (const record of records) {
+    const id = String(recordValue(record, '$id') || '');
+    if (!id) {
+      continue;
+    }
+
+    const label = document.createElement('label');
+    label.className = 'krp-record-picker__item';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.addEventListener('change', () => {
+      if (checkbox.checked) {
+        indexRecordPickerSelection.set(id, record);
+      } else {
+        indexRecordPickerSelection.delete(id);
+      }
+    });
+    checkboxes.push(checkbox);
+
+    const reportType = String(recordValue(record, config.outputReportIdField) || '');
+    const store = String(recordValue(record, config.outputStoreField) || '');
+    const baseDate = String(recordValue(record, config.outputBaseDateField) || '');
+
+    const text = document.createElement('span');
+    text.textContent = `No.${id} ${[reportType, store, baseDate].filter(Boolean).join(' / ')}`;
+
+    label.append(checkbox, text);
+    list.append(label);
+  }
+
+  selectAllButton.addEventListener('click', () => {
+    checkboxes.forEach((checkbox) => {
+      checkbox.checked = true;
+      checkbox.dispatchEvent(new Event('change'));
+    });
+  });
+  clearAllButton.addEventListener('click', () => {
+    checkboxes.forEach((checkbox) => {
+      checkbox.checked = false;
+      checkbox.dispatchEvent(new Event('change'));
+    });
+  });
+
+  panel.append(controls, list);
+  space.appendChild(panel);
+}
+
 async function exportSelectedReports(
   config: PluginConfig,
   records: KintoneRecord[],
   setStatus: (message: string) => void = () => undefined
 ): Promise<void> {
   if (!records.length) {
-    throw new Error('レコードが選択されていません。一覧のチェックボックスでレコードを選択してください。');
+    throw new Error('レコードが選択されていません。一覧上部のチェック欄でレコードを選択してください。');
   }
 
   const failures: string[] = [];
