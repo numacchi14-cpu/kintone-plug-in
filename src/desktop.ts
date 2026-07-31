@@ -1348,7 +1348,7 @@ async function applySourceLookups(
   setStatus: (message: string) => void = () => undefined
 ): Promise<void> {
   for (const lookup of source.lookups) {
-    const keys = rows.map((row) => String(row[lookup.sourceField] ?? '')).filter(Boolean);
+    const keys = Array.from(new Set(rows.map((row) => String(row[lookup.sourceField] ?? '')).filter(Boolean)));
     if (!keys.length || !lookup.masterFields.length) {
       continue;
     }

@@ -118,6 +118,8 @@ function writeSettingsSheet(workbook: ExcelJS.Workbook, context: ReportContext, 
     throw new Error(`テンプレートに「${settingsSheetName}」シートがありません。`);
   }
 
+  const existingRows = worksheet.rowCount;
+
   settingsRows.forEach((row, index) => {
     const rowNumber = index + 1;
     worksheet.getCell(rowNumber, 1).value = row.label;
@@ -125,10 +127,6 @@ function writeSettingsSheet(workbook: ExcelJS.Workbook, context: ReportContext, 
   });
 
   const detailStartRow = settingsRows.length + 2;
-  if (worksheet.rowCount >= detailStartRow) {
-    worksheet.spliceRows(detailStartRow, worksheet.rowCount - detailStartRow + 1);
-  }
-
   const detailRows: Array<[string, string | number]> = [
     ['取得元アプリ数', sourceRows.length]
   ];
@@ -151,6 +149,8 @@ function writeSettingsSheet(workbook: ExcelJS.Workbook, context: ReportContext, 
     worksheet.getCell(rowNumber, 1).value = label;
     worksheet.getCell(rowNumber, 2).value = value;
   });
+
+  clearLeftoverRows(worksheet, detailStartRow + detailRows.length, existingRows);
 }
 
 function writeSourceSheet(workbook: ExcelJS.Workbook, sourceResult: SourceRows, usedTableNames: Set<string>): void {
@@ -168,19 +168,16 @@ function writeSourceSheet(workbook: ExcelJS.Workbook, sourceResult: SourceRows, 
   headerRow.font = { bold: true };
 
   const existingRows = worksheet.rowCount;
-  if (existingRows > 1) {
-    worksheet.spliceRows(2, existingRows - 1);
-  }
 
-  rows.forEach((row, rowIndex) => {
-    const worksheetRow = worksheet.getRow(rowIndex + 2);
-    source.fields.forEach((field, columnIndex) => {
-      worksheetRow.getCell(columnIndex + 1).value = normalizeCellValue(row[field.code]);
-    });
-    worksheetRow.commit();
-  });
+  clearLeftoverRows(worksheet, rows.length + 2, existingRows);
 
   applySourceTable(worksheet, sourceResult, usedTableNames);
+}
+
+function clearLeftoverRows(worksheet: ExcelJS.Worksheet, fromRow: number, existingLastRow: number): void {
+  for (let rowNumber = fromRow; rowNumber <= existingLastRow; rowNumber++) {
+    worksheet.getRow(rowNumber).values = [];
+  }
 }
 
 function validateTemplateWorkbook(workbook: ExcelJS.Workbook, sourceRows: SourceRows[]): void {
