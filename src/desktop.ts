@@ -31,6 +31,7 @@ const pluginId = kintone.$PLUGIN_ID;
 const pluginConfig = parsePluginConfig(kintone.plugin.app.getConfig(pluginId));
 let sourceBlockSequence = 0;
 const indexRecordPickerSelection = new Map<string, KintoneRecord>();
+type BaseDateMode = 'yesterday' | 'record';
 
 kintone.events.on(['app.record.create.show'], (event: any) => {
   if (pluginConfig.mode !== 'output') {
@@ -69,7 +70,7 @@ kintone.events.on(['app.record.detail.show'], (event: any) => {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'krp-button';
-  button.textContent = pluginConfig.mode === 'template' ? '初期Excelテンプレート作成' : 'Excel帳票出力';
+  button.textContent = pluginConfig.mode === 'template' ? '初期Excelテンプレート作成' : '昨日を基準日にExcel出力';
 
   const status = document.createElement('span');
   status.className = 'krp-status';
@@ -80,7 +81,7 @@ kintone.events.on(['app.record.detail.show'], (event: any) => {
       if (pluginConfig.mode === 'template') {
         await generateInitialTemplate(pluginConfig, event.record);
       } else {
-        await exportReport(pluginConfig, event.record, setStatus);
+        await exportReport(pluginConfig, event.record, setStatus, 'yesterday');
       }
     });
   });
@@ -109,6 +110,18 @@ kintone.events.on(['app.record.detail.show'], (event: any) => {
     });
     toolbar.append(validateButton);
   } else {
+    const recordBaseDateButton = document.createElement('button');
+    recordBaseDateButton.type = 'button';
+    recordBaseDateButton.className = 'krp-button krp-button--secondary';
+    recordBaseDateButton.textContent = '入力基準日でExcel出力';
+    recordBaseDateButton.title = 'レコードに入力済みの基準日を使ってExcel出力します';
+    recordBaseDateButton.addEventListener('click', async () => {
+      await runWithStatus(recordBaseDateButton, status, async (setStatus) => {
+        await exportReport(pluginConfig, event.record, setStatus, 'record');
+      });
+    });
+    toolbar.append(recordBaseDateButton);
+
     const checkButton = document.createElement('button');
     checkButton.type = 'button';
     checkButton.className = 'krp-button krp-button--secondary';
@@ -144,8 +157,14 @@ kintone.events.on(['app.record.index.show'], (event: any) => {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'krp-button';
-  button.textContent = '選択レコードをExcel出力';
+  button.textContent = '選択レコードを昨日基準でExcel出力';
   button.title = '下に表示されるチェック欄でレコードを選択してからクリックしてください';
+
+  const recordBaseDateButton = document.createElement('button');
+  recordBaseDateButton.type = 'button';
+  recordBaseDateButton.className = 'krp-button krp-button--secondary';
+  recordBaseDateButton.textContent = '選択レコードを入力基準日でExcel出力';
+  recordBaseDateButton.title = '選択レコードに入力済みの基準日を使ってExcel出力します';
 
   const status = document.createElement('span');
   status.className = 'krp-status';
@@ -157,11 +176,21 @@ kintone.events.on(['app.record.index.show'], (event: any) => {
       return;
     }
     await runWithStatus(button, status, async (setStatus) => {
-      await exportSelectedReports(pluginConfig, records, setStatus);
+      await exportSelectedReports(pluginConfig, records, 'yesterday', setStatus);
     });
   });
 
-  toolbar.append(button, status);
+  recordBaseDateButton.addEventListener('click', async () => {
+    const records = Array.from(indexRecordPickerSelection.values());
+    if (records.length > 1 && !window.confirm(`選択した${records.length}件を入力済み基準日でExcel出力します。よろしいですか？`)) {
+      return;
+    }
+    await runWithStatus(recordBaseDateButton, status, async (setStatus) => {
+      await exportSelectedReports(pluginConfig, records, 'record', setStatus);
+    });
+  });
+
+  toolbar.append(button, recordBaseDateButton, status);
   header.appendChild(toolbar);
   return event;
 });
@@ -226,10 +255,16 @@ function renderIndexRecordPicker(config: PluginConfig, records: KintoneRecord[])
 
     const reportType = String(recordValue(record, config.outputReportIdField) || '');
     const store = String(recordValue(record, config.outputStoreField) || '');
-    const baseDate = resolveBaseDate('yesterday');
+    const yesterdayBaseDate = resolveBaseDate('yesterday');
+    const recordBaseDate = String(recordValue(record, config.outputBaseDateField) || '');
 
     const text = document.createElement('span');
-    text.textContent = `No.${id} ${[reportType, store, `基準日:${baseDate}`].filter(Boolean).join(' / ')}`;
+    text.textContent = `No.${id} ${[
+      reportType,
+      store,
+      `昨日基準:${yesterdayBaseDate}`,
+      `入力基準日:${recordBaseDate || '未入力'}`
+    ].filter(Boolean).join(' / ')}`;
 
     label.append(checkbox, text);
     list.append(label);
@@ -255,6 +290,7 @@ function renderIndexRecordPicker(config: PluginConfig, records: KintoneRecord[])
 async function exportSelectedReports(
   config: PluginConfig,
   records: KintoneRecord[],
+  baseDateMode: BaseDateMode,
   setStatus: (message: string) => void = () => undefined
 ): Promise<void> {
   if (!records.length) {
@@ -265,7 +301,9 @@ async function exportSelectedReports(
   for (const [index, record] of records.entries()) {
     const progress = `${index + 1}/${records.length}件目`;
     try {
-      await exportReport(config, record, (message) => setStatus(`${progress}: ${message}`));
+      setStatus(`${progress}: レコードを取得中...`);
+      const outputRecord = await fetchOutputRecord(record);
+      await exportReport(config, outputRecord, (message) => setStatus(`${progress}: ${message}`), baseDateMode);
     } catch (error) {
       failures.push(`${progress}: ${errorMessage(error, '出力に失敗しました。')}`);
     }
@@ -277,6 +315,20 @@ async function exportSelectedReports(
   if (failures.length) {
     throw new Error([`${records.length}件中${failures.length}件の出力に失敗しました。`, ...failures].join('\n'));
   }
+}
+
+async function fetchOutputRecord(record: KintoneRecord): Promise<KintoneRecord> {
+  const appId = kintone.app.getId?.();
+  const recordId = outputRecordId(record);
+  if (!appId || !recordId) {
+    return record;
+  }
+
+  const response = await kintone.api(kintone.api.url('/k/v1/record.json', true), 'GET', {
+    app: appId,
+    id: recordId
+  });
+  return response.record || record;
 }
 
 function wait(ms: number): Promise<void> {
@@ -1394,10 +1446,11 @@ function escapeHtml(value: string): string {
 async function exportReport(
   config: PluginConfig,
   record: KintoneRecord,
-  setStatus: (message: string) => void = () => undefined
+  setStatus: (message: string) => void = () => undefined,
+  baseDateMode: BaseDateMode = 'yesterday'
 ): Promise<void> {
   setStatus('出力条件を確認中...');
-  const { reportId, store, baseDate } = resolveOutputConditions(config, record);
+  const { reportId, store, baseDate } = resolveOutputConditions(config, record, baseDateMode);
 
   setStatus('テンプレート設定を取得中...');
   const templateRecord = await findTemplateRecord(config, reportId);
@@ -1431,7 +1484,7 @@ async function exportReport(
   setStatus('Excelをダウンロード中...');
   downloadWorkbook(outputBuffer, fileName);
   setStatus('出力履歴を保存中...');
-  await saveOutputHistory(config, context, fileName);
+  await saveOutputHistory(config, context, fileName, outputRecordId(record));
 }
 
 async function validateOutputReadiness(
@@ -1470,11 +1523,15 @@ async function validateOutputReadiness(
 
 function resolveOutputConditions(
   config: PluginConfig,
-  record: KintoneRecord
+  record: KintoneRecord,
+  baseDateMode: BaseDateMode = 'yesterday'
 ): { reportId: string; store: string; baseDate: string } {
   const reportId = String(recordValue(record, config.outputReportIdField) || '');
   const store = String(recordValue(record, config.outputStoreField) || '');
-  const baseDate = resolveBaseDate('yesterday', new Date(), '');
+  const baseDate =
+    baseDateMode === 'record'
+      ? String(recordValue(record, config.outputBaseDateField) || '')
+      : resolveBaseDate('yesterday', new Date(), '');
 
   if (!reportId) {
     throw new Error(
@@ -1484,6 +1541,9 @@ function resolveOutputConditions(
         'このアプリのプラグイン設定でモードを「テンプレート管理」に変更し、アプリを更新してください。'
       ].join('')
     );
+  }
+  if (!baseDate) {
+    throw new Error('入力基準日で出力する場合は、基準日を入力してください。');
   }
   return { reportId, store, baseDate };
 }
@@ -1750,8 +1810,13 @@ function setRecordFieldValue(record: Record<string, any>, fieldCode: string, val
   }
 }
 
-async function saveOutputHistory(config: PluginConfig, context: ReportContext, fileName: string): Promise<void> {
-  const recordId = kintone.app.record.getId?.();
+async function saveOutputHistory(
+  config: PluginConfig,
+  context: ReportContext,
+  fileName: string,
+  targetRecordId = ''
+): Promise<void> {
+  const recordId = targetRecordId || String(kintone.app.record.getId?.() || '');
   const appId = kintone.app.getId?.();
   const record: Record<string, { value: string }> = {};
 
@@ -1773,6 +1838,10 @@ async function saveOutputHistory(config: PluginConfig, context: ReportContext, f
     id: recordId,
     record
   });
+}
+
+function outputRecordId(record: KintoneRecord): string {
+  return String(recordValue(record, '$id') || kintone.app.record.getId?.() || '');
 }
 
 function buildOutputMemo(context: ReportContext, fileName: string): string {
