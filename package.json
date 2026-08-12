@@ -1,6 +1,6 @@
 {
   "name": "kintone-excel-report-plugin",
-  "version": "0.16.1",
+  "version": "0.16.2",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,7 +10,8 @@
     "package": "npm run build && node scripts/build-plugin.mjs"
   },
   "dependencies": {
-    "exceljs": "^4.4.0"
+    "exceljs": "^4.4.0",
+    "jszip": "^3.10.1"
   },
   "devDependencies": {
     "@kintone/plugin-packer": "^8.1.0",

@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import JSZip from 'jszip';
 import type { PluginConfig, ReportContext, SourceAppConfig, SourceRows } from './types';
 
 const settingsSheetName = '設定';
@@ -48,7 +49,7 @@ export async function createInitialTemplate(config: PluginConfig, reportName: st
   summary.getCell('A1').value = 'ここにExcel側で数式・書式・レイアウトを作成してください';
   summary.getCell('A1').font = { color: { argb: 'FF667085' } };
 
-  return workbook.xlsx.writeBuffer();
+  return ensureAutomaticRecalculation(await workbook.xlsx.writeBuffer());
 }
 
 export async function fillReportTemplate(templateBuffer: ArrayBuffer, context: ReportContext, sourceRows: SourceRows[]): Promise<ArrayBuffer> {
@@ -66,7 +67,7 @@ export async function fillReportTemplate(templateBuffer: ArrayBuffer, context: R
   materializeTemplateFormulas(workbook);
   hideTechnicalSheets(workbook, sourceRows);
 
-  return workbook.xlsx.writeBuffer();
+  return ensureAutomaticRecalculation(await workbook.xlsx.writeBuffer());
 }
 
 export async function validateReportTemplate(templateBuffer: ArrayBuffer, sources: SourceAppConfig[]): Promise<void> {
@@ -188,11 +189,30 @@ function materializeTemplateFormulas(workbook: ExcelJS.Workbook): void {
     worksheet.eachRow({ includeEmpty: false }, (row) => {
       row.eachCell({ includeEmpty: false }, (cell) => {
         if (typeof cell.value === 'string' && cell.value.startsWith(formulaPlaceholderPrefix)) {
-          cell.value = { formula: cell.value.slice(formulaPlaceholderPrefix.length).replace(/^=/, ''), result: 0 };
+          cell.value = { formula: cell.value.slice(formulaPlaceholderPrefix.length).replace(/^=/, '') };
+        } else if (typeof cell.result === 'string' && cell.result.startsWith(formulaPlaceholderPrefix) && cell.formula) {
+          cell.value = { formula: cell.formula };
         }
       });
     });
   });
+}
+
+async function ensureAutomaticRecalculation(workbookBuffer: ArrayBuffer): Promise<ArrayBuffer> {
+  const zip = await JSZip.loadAsync(workbookBuffer);
+  const workbookXml = zip.file('xl/workbook.xml');
+  if (!workbookXml) {
+    throw new Error('Excelブック定義を読み込めません。');
+  }
+
+  const calcProperties = '<calcPr calcId="171027" calcMode="auto" fullCalcOnLoad="1" forceFullCalc="1"/>';
+  const xml = await workbookXml.async('string');
+  const rewritten = /<calcPr\b[^>]*\/>/.test(xml)
+    ? xml.replace(/<calcPr\b[^>]*\/>/, calcProperties)
+    : xml.replace('</workbook>', `${calcProperties}</workbook>`);
+
+  zip.file('xl/workbook.xml', rewritten);
+  return zip.generateAsync({ type: 'arraybuffer' });
 }
 
 function hideTechnicalSheets(workbook: ExcelJS.Workbook, sourceRows: SourceRows[]): void {

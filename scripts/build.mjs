@@ -4,7 +4,8 @@ import { build } from 'vite';
 
 const root = process.cwd();
 
-await rm(resolve(root, 'dist'), { recursive: true, force: true });
+// Keep already packaged plugin ZIP files in dist; only regenerated JavaScript is cleared.
+await rm(resolve(root, 'dist', 'js'), { recursive: true, force: true });
 
 async function buildEntry(entry, name, fileName) {
   await build({
