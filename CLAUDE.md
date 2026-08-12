@@ -1,101 +1,76 @@
-# CLAUDE.md
+# Claude Code 引継ぎ: Kintone Excel帳票出力プラグイン
 
-このファイルは、Claude Code がこのリポジトリを扱うときのプロジェクト前提と作業ルールです。
+## 目的と仕様書
 
-## プロジェクト概要
+このリポジトリは、Kintoneから取得したデータを既存書式のExcel帳票へ流し込むプラグインである。業務要件と受入基準は、親プロジェクト `C:\Projects\PL Management\SPEC.md` を正とする。プラグイン固有の設計・互換性・検証結果は [SPEC.md](SPEC.md) を正とする。
 
-このリポジトリは、kintone上で動作する「Excel帳票出力プラグイン」のプロトタイプです。
+PL Management案件を引き継ぐ場合は、最初に親プロジェクトの `CLAUDE.md` と本ファイル・`SPEC.md` を確認する。実運用の接続先、APIトークン、パスワード、アプリIDはコミットしない。
 
-目的は、複数のkintoneアプリからログインユーザー権限でデータを取得し、既存Excelテンプレートの元データ用シートへ値を書き込み、見た目重視の `.xlsx` 帳票を出力することです。
+## 実装範囲
 
-APIトークン、パスワード、実データは使用しません。
+- テンプレート管理アプリで、初期テンプレート作成、完成版テンプレート添付、テンプレート検証を行う。
+- 帳票出力アプリで、指定レコードの基準日または入力基準日からKintoneを絞り込み、Excel帳票をダウンロードする。
+- Kintone APIは `kintone.api()` とカーソルAPIを使い、500件単位で取得する。
+- テンプレートの `__PL_FORMULA__:=...` は、出力時にExcelの通常数式へ変換する。
 
-## 基本方針
+## PL Managementの現行状態（2026-08-12）
 
-- Excel出力形式は `.xlsx`
-- Excelテンプレート方式を採用
-- 集計シートの数式・罫線・書式・レイアウトはExcel側に残す
-- プラグイン側では集計シートの数式を計算しない
-- ブラウザ側ライブラリはExcelJSを使用
-- kintoneデータ取得は `kintone.api()` を使用
-- APIトークンは使わない
-- 基準日は通常、実行日の前日を使う。「入力基準日でExcel出力」ボタンではレコードの手入力基準日を使う
-- 期間ルールは各日付フィルターの `dateRule` で指定する
+- 現行リリース: **v0.16.4**
+- 最新コミット: `9bc17b4 Format exported date as Excel date`
+- 配布ZIP: `dist/kintone-excel-report-plugin-v0.16.4.zip`
+- 管理アプリ: 179、出力アプリ: 180。ただし環境固有値としてソースや設定例へ固定しない。
+- 帳票ID: `monthly_department_pl`（単月）、累計部門別損益計算書もテンプレート・取得元設定を作成済み。
 
-## 現在のプロトタイプ範囲
+### v0.16.2～v0.16.4で直したこと
 
-- プラグイン1本
-- モード選択
-  - テンプレート管理モード
-  - 帳票出力モード
-- 帳票1種類を想定
-- 取得元アプリはJSON設定で複数指定可能
-- 帳票ごとにテンプレート管理レコード側の取得元アプリ設定JSONを指定可能
-- テンプレート管理アプリでは紐づく帳票出力アプリIDを設定し、抽出条件で出力アプリの任意フィールドを参照できる
-- 初期Excelテンプレート作成
-- 完成版テンプレート添付の取得
-- 設定シートへの出力条件書き込み
-- 元データ用シートへのkintoneレコード書き込み
-- 集計シートの数式保持
-- 500件超のレコード取得にカーソルAPIで対応
+- **v0.16.2**: 数式プレースホルダーを変換するときに計算結果`0`をキャッシュとして保存しない。出力ブックの `calcPr` に `calcMode=auto`、`fullCalcOnLoad=1`、`forceFullCalc=1` を設定し、Excel起動時に全再計算する。
+- **v0.16.3**: Kintoneから来る `yyyy-mm-dd` のISO文字列をExcel日付に変換する。設定JSONが旧来の`text`型でも日付条件付き `SUMIFS` が0件にならないようにした。
+- **v0.16.4**: `exportedAt` もExcel日付として設定シートのB7へ書き込む。帳票の `TEXT(設定!B7,"[$-ja-JP-x-gannen]ggge年m月d日")` が和暦を表示できる。
 
-## 主なファイル
+## PL帳票の検証状況
 
-- `src/desktop.ts`: kintone画面側のメイン処理
-- `src/config.ts`: プラグイン設定画面の処理
-- `src/shared/excel.ts`: Excelテンプレート生成・編集・ダウンロード
-- `src/shared/kintoneApi.ts`: kintone API取得処理
-- `src/shared/dateRules.ts`: 基準日・期間ルール計算
-- `src/shared/config.ts`: プラグイン設定の読み書き
-- テンプレート管理レコードの `sources_json`: 帳票ごとの取得元アプリ設定JSON
-- `SOURCES_JSON_EXAMPLES.md`: 取得元アプリ設定JSONの利用者向けサンプル
-- テンプレート管理レコード追加/編集画面には、複数取得元アプリ対応のJSON簡易生成UIがある
-- 簡易生成UIは、アプリIDからフィールド定義を取得し、型推定、選択、削除、上下移動ができる
-- 抽出条件は `filters`、並び順は `sorts` の配列だけを正式仕様として扱う
-- 旧 `periodRule` / `additionalQuery` / `valueFrom: "period"` は互換対応しない
-- `src/shared/defaults.ts`: 初期設定値
-- `plugin/manifest.json`: kintoneプラグインmanifest
-- `public/config.html`: プラグイン設定画面HTML
-- `public/css/`: 設定画面・デスクトップ画面CSS
-- `scripts/build.mjs`: Viteビルド
-- `scripts/build-plugin.mjs`: kintoneプラグインzip生成
+- 単月（2025年11月）は旧帳票との1,518セル全件比較が差異0件。
+- 累計（2025年1～11月）はテンプレート `C:\Projects\PL Management\outputs\cumulative-template-20260812\累計部門別PL_Kintoneテンプレート_完成版_千円表示_修正版8.xlsx` と取得元JSONを作成済み。
+- 累計は実Kintone出力で金額・書式を目視確認済みで、出力日もv0.16.4で正常化済み。ただし旧累計帳票との沖縄・九州の全セル照合は未完了。
+- 累計の元データ範囲は `INDEX` / `COUNTA` で動的に取得する。固定1万行参照、空のExcelテーブル、旧帳票の値の固定コピーは使わない。
 
-## 開発コマンド
+## 主なソース
 
-PowerShellでは `npm` ではなく `npm.cmd` を使うことがあります。
+- `src/desktop.ts`: レコード詳細画面・一覧画面の出力UI
+- `src/config.ts`: プラグイン設定画面
+- `src/shared/excel.ts`: Excel読込・取得データの書込・数式変換・自動再計算指定
+- `src/shared/kintoneApi.ts`: KintoneクエリとカーソルAPI
+- `src/shared/dateRules.ts`: 基準日・期間条件
+- `src/shared/config.ts`: 設定JSONの解析・保存
+- `src/shared/types.ts`: 共通型
+- `scripts/build.mjs`: TypeScript/Viteビルド
+- `scripts/build-plugin.mjs`: プラグインZIP作成
+- `plugin/manifest.json`: マニフェストとバージョン
+
+## 開発・検証コマンド
+
+PowerShellでは `npm` ではなく `npm.cmd` を使う。
 
 ```powershell
-npm.cmd install
 npm.cmd run typecheck
 npm.cmd test
-npm.cmd run build
 npm.cmd run package
 ```
 
-成果物:
+リリース前に必ず型チェック・テスト・パッケージ作成を実行する。パッケージは `dist/kintone-excel-report-plugin-v<version>.zip` に生成される。
 
-```text
-dist/kintone-excel-report-plugin.zip
-```
+## 変更時のルール
 
-## 実装時の注意
+- バグ修正・仕様変更時は、`package.json`、`package-lock.json`、`plugin/manifest.json` のバージョンを揃える。
+- `SPEC.md` と本ファイルへ、変更理由、影響する帳票、確認方法、残作業を同じ変更単位で記録する。
+- 生成済みZIPは動作確認用であり、秘密情報を含めない。
+- 日付はExcel上で日付型として扱う。文字列の日付を式の比較・集計条件に渡さない。
+- 出力テンプレートの見た目・セル結合・数値書式を壊さない。ExcelJSで読めることと、Excelで警告なしに開けることを確認する。
+- Kintoneのドロップダウン条件は `=` ではなく `in` を使用する。`aggregation_status` を `=` で検索すると `GAIA_IQ03` になる。
+- 金額は円で取得・計算し、帳票の書式でのみ千円表示・`△`表示にする。
 
-- 実データ、APIトークン、パスワードをコードやドキュメントへ書かない
-- kintoneフィールドコードやアプリIDはダミーまたは設定値として扱う
-- Excelの集計シートは原則触らない
-- 元データ用シートの行差し替えは `src/shared/excel.ts` に集約する
-- 期間ルール追加は `src/shared/dateRules.ts` に集約する
-- kintone APIのクエリ生成・カーソルAPI処理は `src/shared/kintoneApi.ts` に集約する
-- 仕様拡張時も、まず1帳票・少数アプリで検証できる状態を保つ
+## 次の作業
 
-## 優先したい次の拡張
-
-相談済みの要望は、`SPEC.md` の「今後の拡張候補」と「次の実装順」を正とする。
-
-直近の優先順:
-
-1. 店舗マスタなどのマスタ参照
-2. 出力アプリの基準日/期間初期値と出力履歴
-3. テンプレート・設定検証
-4. エラー表示と権限チェック
-5. 大量データ取得時の進捗表示
+1. v0.16.4で出力した2025年1～11月累計帳票を、旧帳票と全セル比較する。
+2. 差異が出た場合は、Kintoneクエリ、日付型、配賦設定、テンプレート数式の順に切り分ける。
+3. 受入完了後に、訂正CSVを再取込したときの再出力結果を確認する。
