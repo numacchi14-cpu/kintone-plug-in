@@ -88,6 +88,9 @@ npm.cmd run package
 ## 変更時の目安
 
 - 相談済みの今後実装する内容は `SPEC.md` の「今後の拡張候補」と「次の実装順」を正とする
+- PL Management案件を継続する場合は、先に `SPEC.md` の「PL Management 導入・引継ぎ状況」を確認する。帳票ID、テンプレート、検証済み範囲、残作業をここで引き継ぐ
+- PL案件の帳票設定を変更した場合は、完成版テンプレート、取得元アプリ設定JSON、`SPEC.md` の引継ぎ状況を同じ変更単位で更新する。環境固有のアプリID・接続先・認証情報は書かない
+- 単月帳票のフィルターで `aggregation_status` を指定する場合は、Kintoneのドロップダウン仕様に合わせて演算子を `in` にする。`=` は `GAIA_IQ03` になる
 - 期間ルールを増やす場合: `src/shared/dateRules.ts`
 - Excelシート書き込みを変える場合: `src/shared/excel.ts`
 - kintoneの取得条件やカーソルAPI処理を変える場合: `src/shared/kintoneApi.ts`
