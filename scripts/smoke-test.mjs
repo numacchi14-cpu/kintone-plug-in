@@ -174,6 +174,7 @@ try {
   await reportTemplate.xlsx.load(Buffer.from(templateBuffer));
   const reportSheet = reportTemplate.addWorksheet('帳票');
   reportSheet.getCell('A1').value = '__PL_FORMULA__:=SUM(1,2)';
+  reportSheet.getCell('A1').numFmt = '#,###,;[Red]"△ "#,###,';
   const reportTemplateBuffer = await reportTemplate.xlsx.writeBuffer();
   const reportOutput = await fillReportTemplate(
     reportTemplateBuffer,
@@ -204,6 +205,7 @@ try {
   assertEqual(outputBook.getWorksheet('集計')?.state, 'hidden', '集計シートを非表示');
   assertEqual(outputBook.getWorksheet('実績')?.state, 'hidden', '元データ用シートを非表示');
   assertEqual(outputBook.getWorksheet('帳票')?.getCell('A1').value?.formula, 'SUM(1,2)', '数式プレースホルダーを変換');
+  assertEqual(outputBook.getWorksheet('帳票')?.getCell('A1').numFmt, '#,###,;[Red]"△ "#,###,', '数式プレースホルダーの表示書式を維持');
 
   console.log('Smoke tests passed.');
 } finally {

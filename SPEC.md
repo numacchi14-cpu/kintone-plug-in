@@ -742,11 +742,13 @@ dist/kintone-excel-report-plugin.zip
 
 - 帳票ID: `monthly_department_pl`（単月部門別損益計算書）
 - 取得元: `PL実績明細` と `配賦設定履歴` の2アプリ
-- 完成版テンプレート: `C:\Projects\PL Management\outputs\monthly-template-20260812\単月部門別PL_Kintoneテンプレート_完成版.xlsx`
+- 完成版テンプレート: `C:\Projects\PL Management\outputs\monthly-template-20260812-v0.16.1\単月部門別PL_Kintoneテンプレート_完成版_千円表示.xlsx`
 - 取得元アプリ設定JSON: 同フォルダの `sources_json_単月部門別PL.json`
 - 帳票シートは `単月_沖縄`、`単月_九州`。元データ、設定、集計は技術用シートとして扱う。
 
 テンプレートの集計ロジックはExcel数式で実装する。テンプレート作成時に数式を事前評価できないセルは、`__PL_FORMULA__:=...` を入れておき、帳票出力時に通常のExcel数式へ変換する。
+
+金額セルは円のまま計算し、数値書式 `#,###,;[Red]"△ "#,###,` で千円表示・右寄せにする。率は `0.00%` とする。数式プレースホルダーを設定する際、この数値書式を文字列形式へ変更してはならない。
 
 ### 取得設定で確認済みの要点
 
