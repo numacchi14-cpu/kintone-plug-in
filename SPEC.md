@@ -742,7 +742,7 @@ dist/kintone-excel-report-plugin.zip
 
 - 帳票ID: `monthly_department_pl`（単月部門別損益計算書）
 - 取得元: `PL実績明細` と `配賦設定履歴` の2アプリ
-- 完成版テンプレート: `C:\Projects\PL Management\outputs\monthly-template-20260812-v0.16.1\単月部門別PL_Kintoneテンプレート_完成版_千円表示.xlsx`
+- 完成版テンプレート: `C:\Projects\PL Management\outputs\monthly-template-20260812-v0.16.2\単月部門別PL_Kintoneテンプレート_完成版_千円表示.xlsx`
 - 取得元アプリ設定JSON: 同フォルダの `sources_json_単月部門別PL.json`
 - 帳票シートは `単月_沖縄`、`単月_九州`。元データ、設定、集計は技術用シートとして扱う。
 
@@ -780,6 +780,12 @@ dist/kintone-excel-report-plugin.zip
 - 累計帳票は開始日以上・終了日以下の範囲条件で集計するため、この修正で集計対象が減らない。累計のテンプレート・設定JSON・数式は変更しない。v0.16.5をパッケージ化する前に単月と累計を同じ条件で再出力して確認する。
 
 この案件の業務要件・Kintoneアプリ構成・受入基準は、親プロジェクトの `C:\Projects\PL Management\SPEC.md` を正とする。本リポジトリでは、プラグインの実装、設定JSONの互換性、Excel出力の検証手順を管理する。
+
+### Claude Codeによる精査（2026-08-12）
+
+- `npm.cmd run typecheck` / `npm.cmd test` は現行ブランチで成功、作業ツリーもクリーンであることを確認した。
+- 単月の日付不具合（上記「単月の日付不具合と次の修正」）はコード（`src/shared/excel.ts`の`normalizeCellValue`/`normalizeDateTimeValue`）を直接確認し、記載どおり未修正であることを確認した。
+- **重要**: 直近のv0.16.x一連の作業（2026-08-01以降、10コミット）はすべてローカルブランチ`agent/documentation-status`上にあり、`main`へマージされていない。さらにこのブランチ自体もGitHub（`origin/agent/documentation-status`）へ9コミット分未プッシュで、作業用PC1台にしか存在しない状態だった。次にこのリポジトリで作業するエージェント（Codex／Claude Codeいずれも）は、作業前に`git push`でoriginへ退避し、区切りの良いタイミングで`main`へのマージも検討すること。
 
 ## 既知の制約
 
