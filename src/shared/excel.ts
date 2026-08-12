@@ -3,6 +3,7 @@ import type { PluginConfig, ReportContext, SourceAppConfig, SourceRows } from '.
 
 const settingsSheetName = '設定';
 const summarySheetName = '集計';
+const formulaPlaceholderPrefix = '__PL_FORMULA__:';
 const settingsRows = [
   { label: '帳票ID', value: (context: ReportContext, reportName: string) => context.reportId || '' },
   { label: '帳票名', value: (context: ReportContext, reportName: string) => context.reportName || reportName },
@@ -62,6 +63,8 @@ export async function fillReportTemplate(templateBuffer: ArrayBuffer, context: R
   for (const sourceResult of sourceRows) {
     writeSourceSheet(workbook, sourceResult, usedTableNames);
   }
+  materializeTemplateFormulas(workbook);
+  hideTechnicalSheets(workbook, sourceRows);
 
   return workbook.xlsx.writeBuffer();
 }
@@ -178,6 +181,26 @@ function clearLeftoverRows(worksheet: ExcelJS.Worksheet, fromRow: number, existi
   for (let rowNumber = fromRow; rowNumber <= existingLastRow; rowNumber++) {
     worksheet.getRow(rowNumber).values = [];
   }
+}
+
+function materializeTemplateFormulas(workbook: ExcelJS.Workbook): void {
+  workbook.eachSheet((worksheet) => {
+    worksheet.eachRow({ includeEmpty: false }, (row) => {
+      row.eachCell({ includeEmpty: false }, (cell) => {
+        if (typeof cell.value === 'string' && cell.value.startsWith(formulaPlaceholderPrefix)) {
+          cell.value = { formula: cell.value.slice(formulaPlaceholderPrefix.length).replace(/^=/, ''), result: 0 };
+        }
+      });
+    });
+  });
+}
+
+function hideTechnicalSheets(workbook: ExcelJS.Workbook, sourceRows: SourceRows[]): void {
+  const names = new Set([settingsSheetName, summarySheetName, ...sourceRows.map(({ source }) => source.sheetName)]);
+  names.forEach((name) => {
+    const worksheet = workbook.getWorksheet(name);
+    if (worksheet) worksheet.state = 'hidden';
+  });
 }
 
 function validateTemplateWorkbook(workbook: ExcelJS.Workbook, sourceRows: SourceRows[]): void {
