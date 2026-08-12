@@ -170,6 +170,41 @@ try {
   assertEqual(Boolean(table), true, '元データ用Excelテーブル');
   assertEqual(table.table.tableRef, 'A1:C3', '元データ用Excelテーブル範囲');
 
+  const reportTemplate = new ExcelJS.Workbook();
+  await reportTemplate.xlsx.load(Buffer.from(templateBuffer));
+  const reportSheet = reportTemplate.addWorksheet('帳票');
+  reportSheet.getCell('A1').value = '__PL_FORMULA__:=SUM(1,2)';
+  const reportTemplateBuffer = await reportTemplate.xlsx.writeBuffer();
+  const reportOutput = await fillReportTemplate(
+    reportTemplateBuffer,
+    {
+      reportId: 'actual',
+      reportName: 'テスト帳票',
+      store: '福岡本店',
+      baseDate: '2026-07-15',
+      periodStart: '2026-07-01',
+      periodEnd: '2026-07-15',
+      exportedAt: '2026-07-15',
+      exporter: 'テスト'
+    },
+    [
+      {
+        source: excelSource,
+        rows: [],
+        periodStart: '2026-07-01',
+        periodEnd: '2026-07-15',
+        query: ''
+      }
+    ]
+  );
+  const outputBook = new ExcelJS.Workbook();
+  await outputBook.xlsx.load(Buffer.from(reportOutput));
+  assertEqual(outputBook.getWorksheet('帳票')?.state, 'visible', '帳票シートを表示');
+  assertEqual(outputBook.getWorksheet('設定')?.state, 'hidden', '設定シートを非表示');
+  assertEqual(outputBook.getWorksheet('集計')?.state, 'hidden', '集計シートを非表示');
+  assertEqual(outputBook.getWorksheet('実績')?.state, 'hidden', '元データ用シートを非表示');
+  assertEqual(outputBook.getWorksheet('帳票')?.getCell('A1').value?.formula, 'SUM(1,2)', '数式プレースホルダーを変換');
+
   console.log('Smoke tests passed.');
 } finally {
   await Promise.all([

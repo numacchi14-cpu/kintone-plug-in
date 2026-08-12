@@ -197,6 +197,14 @@ function materializeTemplateFormulas(workbook: ExcelJS.Workbook): void {
 
 function hideTechnicalSheets(workbook: ExcelJS.Workbook, sourceRows: SourceRows[]): void {
   const names = new Set([settingsSheetName, summarySheetName, ...sourceRows.map(({ source }) => source.sheetName)]);
+  const reportSheet = workbook.worksheets.find((worksheet) => !names.has(worksheet.name));
+  if (!reportSheet) {
+    return;
+  }
+
+  reportSheet.state = 'visible';
+  const activeTab = workbook.worksheets.indexOf(reportSheet);
+  workbook.views = [{ x: 0, y: 0, width: 10000, height: 20000, firstSheet: activeTab, activeTab, visibility: 'visible' }];
   names.forEach((name) => {
     const worksheet = workbook.getWorksheet(name);
     if (worksheet) worksheet.state = 'hidden';
