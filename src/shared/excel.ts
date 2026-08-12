@@ -286,7 +286,15 @@ function normalizeCellValue(value: unknown): ExcelJS.CellValue {
     return '';
   }
 
-  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string') {
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (match) {
+      return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    }
     return value;
   }
 
