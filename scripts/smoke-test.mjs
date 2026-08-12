@@ -154,7 +154,7 @@ try {
       {
         source: excelSource,
         rows: [
-          { date: new Date(2026, 6, 1), store: '福岡本店', sales: 1000 },
+          { date: '2026-07-01', store: '福岡本店', sales: 1000 },
           { date: new Date(2026, 6, 2), store: '福岡本店', sales: 2000 }
         ],
         periodStart: '2026-07-01',
@@ -169,6 +169,14 @@ try {
   const table = worksheet?.getTable('tbl_actual');
   assertEqual(Boolean(table), true, '元データ用Excelテーブル');
   assertEqual(table.table.tableRef, 'A1:C3', '元データ用Excelテーブル範囲');
+
+  const isoDateCellValue = worksheet.getCell('A2').value;
+  assertEqual(isoDateCellValue instanceof Date, true, 'ISO日付文字列をDateへ変換');
+  assertEqual(
+    isoDateCellValue.getTime(),
+    Date.UTC(2026, 6, 1),
+    'ISO日付をUTC基準の時刻なしDateとして書き込む（実行環境のタイムゾーンに依存しない）'
+  );
 
   const reportTemplate = new ExcelJS.Workbook();
   await reportTemplate.xlsx.load(Buffer.from(templateBuffer));
