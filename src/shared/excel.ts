@@ -127,7 +127,8 @@ function writeSettingsSheet(workbook: ExcelJS.Workbook, context: ReportContext, 
   settingsRows.forEach((row, index) => {
     const rowNumber = index + 1;
     worksheet.getCell(rowNumber, 1).value = row.label;
-    worksheet.getCell(rowNumber, 2).value = row.value(context, context.reportName);
+    const value = row.value(context, context.reportName);
+    worksheet.getCell(rowNumber, 2).value = rowNumber === 7 ? normalizeDateTimeValue(value) : value;
   });
 
   const detailStartRow = settingsRows.length + 2;
@@ -303,6 +304,26 @@ function normalizeCellValue(value: unknown): ExcelJS.CellValue {
   }
 
   return String(value);
+}
+
+function normalizeDateTimeValue(value: unknown): ExcelJS.CellValue {
+  if (typeof value !== 'string') {
+    return normalizeCellValue(value);
+  }
+
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (!match) {
+    return value;
+  }
+
+  return new Date(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+    Number(match[4]),
+    Number(match[5]),
+    Number(match[6] ?? 0)
+  );
 }
 
 function applyColumnFormats(worksheet: ExcelJS.Worksheet, source: SourceRows['source']): void {
