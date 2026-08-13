@@ -374,6 +374,66 @@
   font-weight: 700;
 }
 
+.krp-date-dialog {
+  width: min(420px, calc(100vw - 32px));
+  border: 1px solid #d8dde5;
+  border-radius: 6px;
+  padding: 0;
+  color: #1f2937;
+}
+
+.krp-date-dialog::backdrop {
+  background: rgb(15 23 42 / 40%);
+}
+
+.krp-date-dialog__body {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.krp-date-dialog h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.krp-date-dialog p {
+  margin: 0;
+  color: #4b5563;
+  font-size: 13px;
+}
+
+.krp-date-dialog__input {
+  min-height: 36px;
+  padding: 0 8px;
+  border: 1px solid #d8dde5;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.krp-date-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.krp-date-dialog__actions button {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid #1f6feb;
+  border-radius: 4px;
+  background: #1f6feb;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.krp-date-dialog__actions button[data-action="cancel"] {
+  border-color: #6b7280;
+  background: #fff;
+  color: #374151;
+}
+
 @media (max-width: 900px) {
   .krp-builder__grid,
   .krp-builder__field-panes,

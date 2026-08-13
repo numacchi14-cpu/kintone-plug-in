@@ -31,6 +31,7 @@ const pluginId = kintone.$PLUGIN_ID;
 const pluginConfig = parsePluginConfig(kintone.plugin.app.getConfig(pluginId));
 let sourceBlockSequence = 0;
 const indexRecordPickerSelection = new Map<string, KintoneRecord>();
+const indexRecordPickerLabels = new Map<string, HTMLElement>();
 type BaseDateMode = 'yesterday' | 'record';
 
 kintone.events.on(['app.record.create.show'], (event: any) => {
@@ -166,6 +167,12 @@ kintone.events.on(['app.record.index.show'], (event: any) => {
   recordBaseDateButton.textContent = '選択レコードを入力基準日でExcel出力';
   recordBaseDateButton.title = '選択レコードに入力済みの基準日を使ってExcel出力します';
 
+  const setBaseDateButton = document.createElement('button');
+  setBaseDateButton.type = 'button';
+  setBaseDateButton.className = 'krp-button krp-button--secondary';
+  setBaseDateButton.textContent = '選択レコードの基準日を一括設定';
+  setBaseDateButton.title = 'カレンダーで選んだ日付を、選択レコードの基準日へまとめて入力します（Excel出力は行いません）';
+
   const status = document.createElement('span');
   status.className = 'krp-status';
   status.textContent = '帳票出力モード';
@@ -192,10 +199,58 @@ kintone.events.on(['app.record.index.show'], (event: any) => {
     });
   });
 
-  toolbar.append(button, recordBaseDateButton, status);
+  setBaseDateButton.addEventListener('click', async () => {
+    const records = Array.from(indexRecordPickerSelection.values());
+    if (!records.length) {
+      showErrorDialog('レコードが選択されていません。一覧上部のチェック欄でレコードを選択してください。');
+      return;
+    }
+    const baseDate = await showBaseDateDialog(records.length);
+    if (!baseDate) {
+      return;
+    }
+    await runWithStatus(setBaseDateButton, status, async (setStatus) => {
+      await bulkUpdateBaseDate(pluginConfig, records, baseDate, setStatus);
+      refreshRecordPickerBaseDates(pluginConfig, records, baseDate);
+      setStatus('基準日を更新しました。');
+    });
+  });
+
+  toolbar.append(button, setBaseDateButton, recordBaseDateButton, status);
   header.appendChild(toolbar);
   return event;
 });
+
+function buildPickerLabelText(config: PluginConfig, id: string, record: KintoneRecord): string {
+  const reportType = String(recordValue(record, config.outputReportIdField) || '');
+  const store = String(recordValue(record, config.outputStoreField) || '');
+  const yesterdayBaseDate = resolveBaseDate('yesterday');
+  const recordBaseDate = String(recordValue(record, config.outputBaseDateField) || '');
+
+  return `No.${id} ${[
+    reportType,
+    store,
+    `昨日基準:${yesterdayBaseDate}`,
+    `入力基準日:${recordBaseDate || '未入力'}`
+  ].filter(Boolean).join(' / ')}`;
+}
+
+function refreshRecordPickerBaseDates(config: PluginConfig, records: KintoneRecord[], baseDate: string): void {
+  // 一覧を再読み込みするとチェック状態が失われ、直後に「入力基準日でExcel出力」を
+  // 続けて押せなくなるため、更新した値をメモリ上とラベル表示だけその場で反映する。
+  for (const record of records) {
+    const id = String(recordValue(record, '$id') || '');
+    if (!id) {
+      continue;
+    }
+    const existingField = record[config.outputBaseDateField];
+    record[config.outputBaseDateField] = { type: existingField?.type ?? 'DATE', value: baseDate };
+    const label = indexRecordPickerLabels.get(id);
+    if (label) {
+      label.textContent = buildPickerLabelText(config, id, record);
+    }
+  }
+}
 
 function renderIndexRecordPicker(config: PluginConfig, records: KintoneRecord[]): void {
   const space = kintone.app.getHeaderSpaceElement?.();
@@ -204,6 +259,7 @@ function renderIndexRecordPicker(config: PluginConfig, records: KintoneRecord[])
   }
 
   indexRecordPickerSelection.clear();
+  indexRecordPickerLabels.clear();
   space.querySelector('[data-krp-record-picker="true"]')?.remove();
 
   if (!records.length) {
@@ -255,18 +311,9 @@ function renderIndexRecordPicker(config: PluginConfig, records: KintoneRecord[])
     });
     checkboxes.push(checkbox);
 
-    const reportType = String(recordValue(record, config.outputReportIdField) || '');
-    const store = String(recordValue(record, config.outputStoreField) || '');
-    const yesterdayBaseDate = resolveBaseDate('yesterday');
-    const recordBaseDate = String(recordValue(record, config.outputBaseDateField) || '');
-
     const text = document.createElement('span');
-    text.textContent = `No.${id} ${[
-      reportType,
-      store,
-      `昨日基準:${yesterdayBaseDate}`,
-      `入力基準日:${recordBaseDate || '未入力'}`
-    ].filter(Boolean).join(' / ')}`;
+    text.textContent = buildPickerLabelText(config, id, record);
+    indexRecordPickerLabels.set(id, text);
 
     label.append(checkbox, text);
     list.append(label);
@@ -316,6 +363,37 @@ async function exportSelectedReports(
 
   if (failures.length) {
     throw new Error([`${records.length}件中${failures.length}件の出力に失敗しました。`, ...failures].join('\n'));
+  }
+}
+
+async function bulkUpdateBaseDate(
+  config: PluginConfig,
+  records: KintoneRecord[],
+  baseDate: string,
+  setStatus: (message: string) => void = () => undefined
+): Promise<void> {
+  const appId = kintone.app.getId?.();
+  if (!appId) {
+    throw new Error('アプリIDを取得できませんでした。');
+  }
+
+  const ids = records.map((record) => outputRecordId(record)).filter(Boolean);
+  if (!ids.length) {
+    throw new Error('レコードIDを取得できませんでした。');
+  }
+
+  // Kintoneの一括更新APIは1回100件までのため、100件ずつに分割して送信する。
+  const batchSize = 100;
+  for (let offset = 0; offset < ids.length; offset += batchSize) {
+    const batch = ids.slice(offset, offset + batchSize);
+    setStatus(`基準日を更新中... (${Math.min(offset + batch.length, ids.length)}/${ids.length}件)`);
+    await kintone.api(kintone.api.url('/k/v1/records.json', true), 'PUT', {
+      app: appId,
+      records: batch.map((id) => ({
+        id,
+        record: { [config.outputBaseDateField]: { value: baseDate } }
+      }))
+    });
   }
 }
 
@@ -1923,6 +2001,55 @@ function showErrorDialog(message: string): void {
   dialog.addEventListener('close', () => dialog.remove());
   document.body.appendChild(dialog);
   dialog.showModal();
+}
+
+function showBaseDateDialog(count: number): Promise<string | null> {
+  return new Promise((resolve) => {
+    const dialog = document.createElement('dialog');
+    if (typeof dialog.showModal !== 'function') {
+      const input = window.prompt(
+        `選択した${count}件のレコードの基準日を一括設定します。日付を入力してください（例: 2026-01-31）`,
+        formatDate(new Date())
+      );
+      resolve(input && /^\d{4}-\d{2}-\d{2}$/.test(input) ? input : null);
+      return;
+    }
+
+    dialog.className = 'krp-date-dialog';
+    dialog.innerHTML = `
+      <form method="dialog" class="krp-date-dialog__body">
+        <h2>基準日を一括設定</h2>
+        <p>選択した${count}件のレコードの基準日をまとめて更新します（Excel出力は行いません）。</p>
+        <input type="date" class="krp-date-dialog__input" required />
+        <div class="krp-date-dialog__actions">
+          <button type="button" data-action="cancel">キャンセル</button>
+          <button type="submit" data-action="confirm">設定</button>
+        </div>
+      </form>
+    `;
+
+    const input = dialog.querySelector<HTMLInputElement>('.krp-date-dialog__input');
+    if (input) {
+      input.value = formatDate(new Date());
+    }
+
+    let confirmed = false;
+    dialog.querySelector('[data-action="confirm"]')?.addEventListener('click', () => {
+      confirmed = true;
+    });
+    dialog.querySelector('[data-action="cancel"]')?.addEventListener('click', () => {
+      dialog.close();
+    });
+
+    dialog.addEventListener('close', () => {
+      const value = confirmed && input ? input.value : '';
+      dialog.remove();
+      resolve(value || null);
+    });
+
+    document.body.appendChild(dialog);
+    dialog.showModal();
+  });
 }
 
 function errorMessage(error: unknown, fallback: string): string {
