@@ -884,6 +884,15 @@ Excel COM自動化（PowerShellから`New-Object -ComObject Excel.Application`�
 - `npm.cmd run typecheck` / `npm.cmd run test` / `npm.cmd run build` / `npm.cmd run package`をすべて実行し成功を確認済み。配布ZIPは`dist/kintone-excel-report-plugin-v0.16.6.zip`。
 - **2026-08-13、Kintoneのプラグイン管理画面でv0.16.6へ更新し、出力用アプリ（180）で実機動作確認まで完了した。** 「基準日を一括設定」ボタンから日付選択→複数レコードの基準日が更新されること、チェック状態が維持されることをユーザーが実際に確認済み。
 
+### 「基準日を一括設定」実行後に一覧テーブルが更新されない不具合の修正（v0.16.7、2026-08-14）
+
+ユーザーから、「選択レコードの基準日を一括設定」を実行しても、Kintone標準の一覧テーブル（基準日列）の表示が更新されず、手動でF5（再読み込み）しないと最新の基準日が見えないという不具合報告があった。
+
+- 原因：v0.16.6でチェック状態を維持するために画面の再読み込みをやめ、`refreshRecordPickerBaseDates`でプラグイン独自の選択欄（チェックボックスのラベルテキスト）だけをその場で書き換える方式にしていた。この方式は、プラグインが自前で描画する選択欄の表示は更新するが、**Kintone自身が描画する標準の一覧テーブル（`app.record.index.show`が提供する`event.records`を元にKintoneが内部で描画するグリッド）には触れない**ため、そちらは古い値のまま残っていた。標準画面の内部DOM構造には依存しない方針（本ファイル「kintone作法」参照）のため、標準テーブルのセルを直接書き換える対応は避けた。
+- 修正：`refreshRecordPickerBaseDates`を廃止し、代わりに選択中のレコードIDを`sessionStorage`（キー`krp-index-selection-<appId>`）へ一時保存してから`reloadPageSoon()`で画面を再読み込みする方式（`saveSelectionForReload`）に変更した。再読み込み後、`app.record.index.show`が再度発火して一覧を描画する際、`renderIndexRecordPicker`の末尾で`restoreSelectionAfterReload`を呼び、保存しておいたIDと一致するチェックボックスへチェックを入れ直す（同時に`sessionStorage`のエントリは消費して1回限りにする）。これにより、Kintone標準の一覧テーブルは実際のページ遷移で最新データを取得・描画するため基準日が正しく更新され、かつプラグイン側のチェック状態も復元されるため、続けて「入力基準日でExcel出力」を押せる従来の利便性も維持される。
+- `npm.cmd run typecheck` / `npm.cmd run test` / `npm.cmd run package`をすべて実行し成功を確認済み。配布ZIPは`dist/kintone-excel-report-plugin-v0.16.7.zip`。
+- **実機（ブラウザ）での動作確認・Kintoneプラグイン管理画面への反映はまだ未実施**。次回、出力用アプリ（180）で「基準日を一括設定」→一覧テーブルの基準日が即座に更新されること・チェック状態が維持されることの両方を確認すること。
+
 ## 既知の制約
 
 - ExcelJSはExcel数式を計算しない

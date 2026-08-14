@@ -211,8 +211,9 @@ kintone.events.on(['app.record.index.show'], (event: any) => {
     }
     await runWithStatus(setBaseDateButton, status, async (setStatus) => {
       await bulkUpdateBaseDate(pluginConfig, records, baseDate, setStatus);
-      refreshRecordPickerBaseDates(pluginConfig, records, baseDate);
-      setStatus('基準日を更新しました。');
+      saveSelectionForReload(records);
+      setStatus('基準日を更新しました。画面を更新します...');
+      reloadPageSoon();
     });
   });
 
@@ -235,19 +236,56 @@ function buildPickerLabelText(config: PluginConfig, id: string, record: KintoneR
   ].filter(Boolean).join(' / ')}`;
 }
 
-function refreshRecordPickerBaseDates(config: PluginConfig, records: KintoneRecord[], baseDate: string): void {
-  // 一覧を再読み込みするとチェック状態が失われ、直後に「入力基準日でExcel出力」を
-  // 続けて押せなくなるため、更新した値をメモリ上とラベル表示だけその場で反映する。
-  for (const record of records) {
-    const id = String(recordValue(record, '$id') || '');
-    if (!id) {
-      continue;
+const SELECTION_STORAGE_KEY_PREFIX = 'krp-index-selection-';
+
+function getSelectionStorageKey(): string | null {
+  const appId = kintone.app.getId?.();
+  if (!appId) {
+    return null;
+  }
+  return `${SELECTION_STORAGE_KEY_PREFIX}${appId}`;
+}
+
+// 基準日の一括設定はKintone標準の一覧テーブル（基準日列）を更新しないため、
+// 反映には画面の再読み込みが必要。ただし単純にreloadするとチェック状態が消え、
+// 直後に「入力基準日でExcel出力」を続けて押せなくなる。そこで選択中のレコードIDを
+// 一時保存し、再読み込み後の一覧描画時に復元する。
+function saveSelectionForReload(records: KintoneRecord[]): void {
+  const key = getSelectionStorageKey();
+  if (!key) {
+    return;
+  }
+  const ids = records.map((record) => String(recordValue(record, '$id') || '')).filter(Boolean);
+  try {
+    window.sessionStorage.setItem(key, JSON.stringify(ids));
+  } catch {
+    // sessionStorageが使えない環境では選択の復元だけ諦める（基準日の更新自体には影響しない）
+  }
+}
+
+function restoreSelectionAfterReload(entries: Array<{ id: string; checkbox: HTMLInputElement }>): void {
+  const key = getSelectionStorageKey();
+  if (!key) {
+    return;
+  }
+  let ids: string[] = [];
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    if (raw) {
+      ids = JSON.parse(raw);
     }
-    const existingField = record[config.outputBaseDateField];
-    record[config.outputBaseDateField] = { type: existingField?.type ?? 'DATE', value: baseDate };
-    const label = indexRecordPickerLabels.get(id);
-    if (label) {
-      label.textContent = buildPickerLabelText(config, id, record);
+  } catch {
+    ids = [];
+  }
+  window.sessionStorage.removeItem(key);
+  if (!ids.length) {
+    return;
+  }
+  const idSet = new Set(ids);
+  for (const { id, checkbox } of entries) {
+    if (idSet.has(id)) {
+      checkbox.checked = true;
+      checkbox.dispatchEvent(new Event('change'));
     }
   }
 }
@@ -291,6 +329,7 @@ function renderIndexRecordPicker(config: PluginConfig, records: KintoneRecord[])
   list.className = 'krp-record-picker__list';
 
   const checkboxes: HTMLInputElement[] = [];
+  const checkboxEntries: Array<{ id: string; checkbox: HTMLInputElement }> = [];
   for (const record of records) {
     const id = String(recordValue(record, '$id') || '');
     if (!id) {
@@ -310,6 +349,7 @@ function renderIndexRecordPicker(config: PluginConfig, records: KintoneRecord[])
       }
     });
     checkboxes.push(checkbox);
+    checkboxEntries.push({ id, checkbox });
 
     const text = document.createElement('span');
     text.textContent = buildPickerLabelText(config, id, record);
@@ -334,6 +374,8 @@ function renderIndexRecordPicker(config: PluginConfig, records: KintoneRecord[])
 
   panel.append(controls, list);
   space.appendChild(panel);
+
+  restoreSelectionAfterReload(checkboxEntries);
 }
 
 async function exportSelectedReports(
