@@ -51,6 +51,8 @@ const dateRangeRules: DateRangeRule[] = [
   'baseYearStart',
   'baseYearEnd',
   'baseYear',
+  'baseFirstHalf',
+  'baseSecondHalf',
   'previousYearStart',
   'previousYearEnd',
   'previousYear',

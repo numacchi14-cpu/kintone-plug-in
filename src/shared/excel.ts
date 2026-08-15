@@ -67,7 +67,7 @@ export async function fillReportTemplate(templateBuffer: ArrayBuffer, context: R
   materializeTemplateFormulas(workbook);
   hideTechnicalSheets(workbook, sourceRows);
 
-  return ensureAutomaticRecalculation(await workbook.xlsx.writeBuffer());
+  return fixSheetPrElementOrder(await ensureAutomaticRecalculation(await workbook.xlsx.writeBuffer()));
 }
 
 export async function validateReportTemplate(templateBuffer: ArrayBuffer, sources: SourceAppConfig[]): Promise<void> {
@@ -213,6 +213,41 @@ async function ensureAutomaticRecalculation(workbookBuffer: ArrayBuffer): Promis
     : xml.replace('</workbook>', `${calcProperties}</workbook>`);
 
   zip.file('xl/workbook.xml', rewritten);
+  return zip.generateAsync({ type: 'arraybuffer' });
+}
+
+// ExcelJSがワークシートを再シリアライズする際、<sheetPr>の子要素をOOXMLスキーマが要求する順序
+// （tabColor, outlinePr, pageSetUpPrの順）どおりに書き出さず、pageSetUpPrをoutlinePrより前に
+// 書いてしまうことがある（原因不明の既知の挙動）。スキーマ順序違反はXMLとしては整形式のため
+// 一般的なXMLパーサーでは検出できないが、Excel自身の厳密な読み込み検証では拒否され、シート内容
+// 全体が読み込みエラーとして破棄される（ファイルが「壊れる」）。テンプレートに元々sheetPrがある
+// 帳票（単月部門別損益計算書など）でのみ発生し、この後処理で毎回、出力後に正しい順序へ補正する。
+export async function fixSheetPrElementOrder(workbookBuffer: ArrayBuffer): Promise<ArrayBuffer> {
+  const zip = await JSZip.loadAsync(workbookBuffer);
+  const sheetPrPattern = /<sheetPr(\s[^>]*)?>([\s\S]*?)<\/sheetPr>/;
+  const childPattern = /<(tabColor|outlinePr|pageSetUpPr)\b[^>]*\/>/g;
+  const order = ['tabColor', 'outlinePr', 'pageSetUpPr'];
+
+  const worksheetFiles = Object.keys(zip.files).filter((name) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name));
+  for (const name of worksheetFiles) {
+    const file = zip.file(name);
+    if (!file) continue;
+    const xml = await file.async('string');
+    const match = xml.match(sheetPrPattern);
+    if (!match) continue;
+
+    const children = [...match[2].matchAll(childPattern)];
+    if (children.length < 2) continue;
+
+    const sorted = [...children].sort((a, b) => order.indexOf(a[1]) - order.indexOf(b[1]));
+    const isAlreadyOrdered = children.every((child, index) => child[0] === sorted[index][0]);
+    if (isAlreadyOrdered) continue;
+
+    const attrs = match[1] ?? '';
+    const rewrittenSheetPr = `<sheetPr${attrs}>${sorted.map((child) => child[0]).join('')}</sheetPr>`;
+    zip.file(name, xml.replace(sheetPrPattern, rewrittenSheetPr));
+  }
+
   return zip.generateAsync({ type: 'arraybuffer' });
 }
 

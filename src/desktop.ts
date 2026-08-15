@@ -9,7 +9,9 @@ import {
   findTemplateRecord,
   getAllRecords,
   getSourceAppFields,
+  mergeSourceRanges,
   recordValue,
+  sourceDateRange,
   uploadKintoneFile
 } from './shared/kintoneApi';
 import type { SourceFieldImportResult } from './shared/kintoneApi';
@@ -875,6 +877,8 @@ function addBuilderFilterRow(sourceBlock: HTMLElement, filter: Partial<SourceFil
         <option value="baseYearEnd">基準日の同年12月31日</option>
         <option value="yearStartToBaseDate">基準日の同年1月1日から基準日</option>
         <option value="baseYear">基準日の同年</option>
+        <option value="baseFirstHalf">基準日の同年上半期（1月～6月）</option>
+        <option value="baseSecondHalf">基準日の同年下半期（7月～12月）</option>
         <option value="previousYearStart">基準日の前年1月1日</option>
         <option value="previousYearEnd">基準日の前年12月31日</option>
         <option value="previousYear">基準日の前年</option>
@@ -1897,26 +1901,6 @@ async function fetchLookupMasterRecords(
   return records;
 }
 
-function sourceDateRange(source: SourceAppConfig, baseDate: string): { start: string; end: string } {
-  const ranges = source.filters
-    .filter((filter) => filter.valueFrom === 'dateRange')
-    .map((filter) => calculateDateRange(filter.dateRule || 'sameDay', baseDate));
-  const starts = ranges.map((range) => range.start).sort();
-  const ends = ranges.map((range) => range.end).sort();
-  return {
-    start: starts[0] || baseDate,
-    end: ends[ends.length - 1] || baseDate
-  };
-}
-
-function mergeSourceRanges(sourceRows: SourceRows[], fallbackDate: string): { periodStart: string; periodEnd: string } {
-  const starts = sourceRows.map((source) => source.periodStart).filter(Boolean).sort();
-  const ends = sourceRows.map((source) => source.periodEnd).filter(Boolean).sort();
-  return {
-    periodStart: starts[0] || fallbackDate,
-    periodEnd: ends[ends.length - 1] || fallbackDate
-  };
-}
 
 function applyOutputPeriodDefaults(config: PluginConfig, record: Record<string, any>, force = false): void {
   const baseDate = String(recordValue(record as KintoneRecord, config.outputBaseDateField) || '');

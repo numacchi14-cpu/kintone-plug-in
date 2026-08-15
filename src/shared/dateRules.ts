@@ -103,6 +103,14 @@ export function calculateDateRange(rule: DateRangeRule, baseDateValue: string): 
     return range(yearStart(baseDate), yearEnd(baseDate));
   }
 
+  if (rule === 'baseFirstHalf') {
+    return range(new Date(baseDate.getFullYear(), 0, 1), new Date(baseDate.getFullYear(), 5, 30));
+  }
+
+  if (rule === 'baseSecondHalf') {
+    return range(new Date(baseDate.getFullYear(), 6, 1), new Date(baseDate.getFullYear(), 11, 31));
+  }
+
   if (rule === 'previousYearStart') {
     return range(yearStart(addYears(baseDate, -1)));
   }

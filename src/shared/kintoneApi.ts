@@ -177,6 +177,36 @@ export async function uploadKintoneFile(file: File): Promise<string> {
   });
 }
 
+export function sourceDateRange(source: SourceAppConfig, baseDate: string): { start: string; end: string } {
+  // 日付範囲フィルターを1つも持たないソース（例：配賦設定履歴のように全件取得するアプリ）は、
+  // このソース自体には「対象期間」という概念がない。ここで基準日にフォールバックしてしまうと、
+  // mergeSourceRangesが全ソースの期間開始・終了の最小・最大を取る際に、日付フィルター付きソース
+  // の本当の期間ではなく、このダミーの基準日が採用されてしまう不具合があった（特に上半期・下半期
+  // のように基準日が対象期間の外にある場合、期間終了が誤って基準日になってしまう）。
+  // 空文字列を返し、呼び出し側のfilter(Boolean)で「対象期間なし」として除外させる。
+  const ranges = source.filters
+    .filter((filter) => filter.valueFrom === 'dateRange')
+    .map((filter) => calculateDateRange(filter.dateRule || 'sameDay', baseDate));
+  const starts = ranges.map((range) => range.start).sort();
+  const ends = ranges.map((range) => range.end).sort();
+  return {
+    start: starts[0] || '',
+    end: ends[ends.length - 1] || ''
+  };
+}
+
+export function mergeSourceRanges(
+  sourceRanges: Array<{ periodStart: string; periodEnd: string }>,
+  fallbackDate: string
+): { periodStart: string; periodEnd: string } {
+  const starts = sourceRanges.map((source) => source.periodStart).filter(Boolean).sort();
+  const ends = sourceRanges.map((source) => source.periodEnd).filter(Boolean).sort();
+  return {
+    periodStart: starts[0] || fallbackDate,
+    periodEnd: ends[ends.length - 1] || fallbackDate
+  };
+}
+
 export function buildSourceQuery(
   source: SourceAppConfig,
   storeValue: string,
