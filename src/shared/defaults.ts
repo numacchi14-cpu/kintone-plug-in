@@ -61,6 +61,7 @@ export const defaultConfig: PluginConfig = {
   templateSourcesJsonField: 'sources_json',
   outputAppId: '',
   outputReportIdField: 'report_type',
+  outputReportNameField: '',
   outputStoreField: 'store',
   outputBaseDateField: 'base_date',
   outputPeriodStartField: '',
@@ -71,5 +72,6 @@ export const defaultConfig: PluginConfig = {
   outputStatusField: '',
   outputMemoField: '',
   baseDateRule: 'yesterday',
+  pickerDisplayFields: ['reportType', 'store', 'yesterdayBase', 'recordBase'],
   sources: defaultSources
 };

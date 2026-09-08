@@ -94,6 +94,36 @@
   font-size: 13px;
 }
 
+.krp-checkbox-group {
+  grid-column: 1 / -1;
+  padding: 0;
+  border: none;
+}
+
+.krp-checkbox-group legend {
+  padding: 0;
+}
+
+.krp-checkbox-group__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 16px 4px 0;
+  font-weight: 400;
+}
+
+.krp-checkbox-group__item input {
+  width: auto;
+  min-height: auto;
+}
+
+.krp-checkbox-group small {
+  display: block;
+  margin-top: 6px;
+  color: #5b6573;
+  font-weight: 400;
+}
+
 .krp-table {
   width: 100%;
   margin-top: 16px;

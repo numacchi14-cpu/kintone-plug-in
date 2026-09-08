@@ -199,6 +199,11 @@
             <input id="outputReportIdField" value="report_type" />
           </label>
           <label class="krp-field">
+            <span>帳票名フィールドコード</span>
+            <input id="outputReportNameField" placeholder="例: report_name（任意）" />
+            <small>一覧上部の選択欄に帳票名（分かりやすい名称）を表示したい場合だけ入力します。空欄なら選択欄には表示しません。</small>
+          </label>
+          <label class="krp-field">
             <span>対象店舗フィールドコード</span>
             <input id="outputStoreField" value="store" />
           </label>
@@ -241,6 +246,15 @@
             </select>
             <small>前日までの営業実績を帳票対象にするため、Excel出力時は常に実行日の前日を基準日にします。</small>
           </label>
+          <fieldset class="krp-field krp-checkbox-group">
+            <legend>一覧上部の選択欄に表示する項目</legend>
+            <label class="krp-checkbox-group__item"><input type="checkbox" id="pickerDisplayField_reportType" /> 帳票種類</label>
+            <label class="krp-checkbox-group__item"><input type="checkbox" id="pickerDisplayField_reportName" /> 帳票名</label>
+            <label class="krp-checkbox-group__item"><input type="checkbox" id="pickerDisplayField_store" /> 対象店舗</label>
+            <label class="krp-checkbox-group__item"><input type="checkbox" id="pickerDisplayField_yesterdayBase" /> 昨日基準日</label>
+            <label class="krp-checkbox-group__item"><input type="checkbox" id="pickerDisplayField_recordBase" /> 入力基準日</label>
+            <small>Excel出力するレコードを選ぶ一覧の各行に表示する項目です。チェックを外すと非表示になり見やすくなります（レコード番号は常に表示）。「帳票名」は上の「帳票名フィールドコード」を入力していないと表示されません。</small>
+          </fieldset>
         </div>
       </section>
 

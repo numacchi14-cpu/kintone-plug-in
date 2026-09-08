@@ -2,6 +2,7 @@ import { defaultConfig } from './defaults';
 import type {
   BaseDateRule,
   DateRangeRule,
+  PickerDisplayField,
   PluginConfig,
   PluginMode,
   SourceAppConfig,
@@ -14,6 +15,7 @@ type RawPluginConfig = Record<string, string>;
 
 const pluginModes: PluginMode[] = ['template', 'output'];
 const baseDateRules: BaseDateRule[] = ['yesterday'];
+const pickerDisplayFieldValues: PickerDisplayField[] = ['reportType', 'reportName', 'store', 'yesterdayBase', 'recordBase'];
 const sourceFieldValueTypes: SourceFieldValueType[] = ['text', 'number', 'date', 'datetime', 'boolean'];
 const sourceFilterOperators: SourceFilterOperator[] = [
   '=',
@@ -81,6 +83,7 @@ export function parsePluginConfig(raw: RawPluginConfig | null | undefined): Plug
     templateSourcesJsonField: data.templateSourcesJsonField ?? defaultConfig.templateSourcesJsonField,
     outputAppId: data.outputAppId ?? defaultConfig.outputAppId,
     outputReportIdField: data.outputReportIdField ?? defaultConfig.outputReportIdField,
+    outputReportNameField: data.outputReportNameField ?? defaultConfig.outputReportNameField,
     outputStoreField: data.outputStoreField ?? defaultConfig.outputStoreField,
     outputBaseDateField: data.outputBaseDateField ?? defaultConfig.outputBaseDateField,
     outputPeriodStartField: data.outputPeriodStartField ?? defaultConfig.outputPeriodStartField,
@@ -91,8 +94,21 @@ export function parsePluginConfig(raw: RawPluginConfig | null | undefined): Plug
     outputStatusField: data.outputStatusField ?? defaultConfig.outputStatusField,
     outputMemoField: data.outputMemoField ?? defaultConfig.outputMemoField,
     baseDateRule,
+    pickerDisplayFields: parsePickerDisplayFields(data.pickerDisplayFields),
     sources: parseSources(data.sourcesJson)
   };
+}
+
+// dataにキー自体が無い（この機能追加前に保存された設定）場合は、従来どおり全項目表示に揃える。
+// キーはあるが値が空文字列の場合は、ユーザーが全項目のチェックを意図的に外した状態として扱う。
+function parsePickerDisplayFields(value: string | undefined): PickerDisplayField[] {
+  if (value === undefined) {
+    return defaultConfig.pickerDisplayFields;
+  }
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item): item is PickerDisplayField => pickerDisplayFieldValues.includes(item as PickerDisplayField));
 }
 
 export function serializePluginConfig(config: PluginConfig): RawPluginConfig {
@@ -105,6 +121,7 @@ export function serializePluginConfig(config: PluginConfig): RawPluginConfig {
     templateSourcesJsonField: config.templateSourcesJsonField,
     outputAppId: config.outputAppId,
     outputReportIdField: config.outputReportIdField,
+    outputReportNameField: config.outputReportNameField,
     outputStoreField: config.outputStoreField,
     outputBaseDateField: config.outputBaseDateField,
     outputPeriodStartField: config.outputPeriodStartField,
@@ -115,6 +132,7 @@ export function serializePluginConfig(config: PluginConfig): RawPluginConfig {
     outputStatusField: config.outputStatusField,
     outputMemoField: config.outputMemoField,
     baseDateRule: config.baseDateRule,
+    pickerDisplayFields: config.pickerDisplayFields.join(','),
     sourcesJson: JSON.stringify(config.sources, null, 2)
   };
 }

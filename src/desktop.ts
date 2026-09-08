@@ -225,17 +225,28 @@ kintone.events.on(['app.record.index.show'], (event: any) => {
 });
 
 function buildPickerLabelText(config: PluginConfig, id: string, record: KintoneRecord): string {
-  const reportType = String(recordValue(record, config.outputReportIdField) || '');
-  const store = String(recordValue(record, config.outputStoreField) || '');
-  const yesterdayBaseDate = resolveBaseDate('yesterday');
-  const recordBaseDate = String(recordValue(record, config.outputBaseDateField) || '');
+  const fields = config.pickerDisplayFields;
+  const parts: string[] = [];
 
-  return `No.${id} ${[
-    reportType,
-    store,
-    `昨日基準:${yesterdayBaseDate}`,
-    `入力基準日:${recordBaseDate || '未入力'}`
-  ].filter(Boolean).join(' / ')}`;
+  if (fields.includes('reportType')) {
+    parts.push(String(recordValue(record, config.outputReportIdField) || ''));
+  }
+  if (fields.includes('reportName') && config.outputReportNameField) {
+    parts.push(String(recordValue(record, config.outputReportNameField) || ''));
+  }
+  if (fields.includes('store')) {
+    parts.push(String(recordValue(record, config.outputStoreField) || ''));
+  }
+  if (fields.includes('yesterdayBase')) {
+    parts.push(`昨日基準:${resolveBaseDate('yesterday')}`);
+  }
+  if (fields.includes('recordBase')) {
+    const recordBaseDate = String(recordValue(record, config.outputBaseDateField) || '');
+    parts.push(`入力基準日:${recordBaseDate || '未入力'}`);
+  }
+
+  const suffix = parts.filter(Boolean).join(' / ');
+  return suffix ? `No.${id} ${suffix}` : `No.${id}`;
 }
 
 const SELECTION_STORAGE_KEY_PREFIX = 'krp-index-selection-';

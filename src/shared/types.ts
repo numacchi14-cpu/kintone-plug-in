@@ -36,6 +36,8 @@ export type DateRangeRule =
   | 'sameMonthPreviousYear'
   | 'previousMonthPreviousYear';
 
+export type PickerDisplayField = 'reportType' | 'reportName' | 'store' | 'yesterdayBase' | 'recordBase';
+
 export type SourceFieldValueType = 'text' | 'number' | 'date' | 'datetime' | 'boolean';
 
 export type SourceFilterOperator = '=' | '!=' | '>' | '>=' | '<' | '<=' | 'like' | 'not like' | 'in' | 'not in' | 'between';
@@ -91,6 +93,7 @@ export interface PluginConfig {
   templateSourcesJsonField: string;
   outputAppId: string;
   outputReportIdField: string;
+  outputReportNameField: string;
   outputStoreField: string;
   outputBaseDateField: string;
   outputPeriodStartField: string;
@@ -101,6 +104,7 @@ export interface PluginConfig {
   outputStatusField: string;
   outputMemoField: string;
   baseDateRule: BaseDateRule;
+  pickerDisplayFields: PickerDisplayField[];
   sources: SourceAppConfig[];
 }
 

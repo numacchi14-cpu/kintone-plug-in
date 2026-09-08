@@ -1,6 +1,8 @@
 import { defaultSources } from './shared/defaults';
 import { parsePluginConfig, parseTemplateSources, serializePluginConfig } from './shared/config';
-import type { BaseDateRule, PluginConfig, PluginMode } from './shared/types';
+import type { BaseDateRule, PickerDisplayField, PluginConfig, PluginMode } from './shared/types';
+
+const pickerDisplayFieldIds: PickerDisplayField[] = ['reportType', 'reportName', 'store', 'yesterdayBase', 'recordBase'];
 
 declare const kintone: any;
 
@@ -15,6 +17,7 @@ setInputValue('templateAttachmentField', config.templateAttachmentField);
 setInputValue('templateSourcesJsonField', config.templateSourcesJsonField);
 setInputValue('outputAppId', config.outputAppId);
 setInputValue('outputReportIdField', config.outputReportIdField);
+setInputValue('outputReportNameField', config.outputReportNameField);
 setInputValue('outputStoreField', config.outputStoreField);
 setInputValue('outputBaseDateField', config.outputBaseDateField);
 setInputValue('outputPeriodStartField', config.outputPeriodStartField);
@@ -25,6 +28,9 @@ setInputValue('outputFileNameField', config.outputFileNameField);
 setInputValue('outputStatusField', config.outputStatusField);
 setInputValue('outputMemoField', config.outputMemoField);
 setInputValue('baseDateRule', 'yesterday');
+for (const field of pickerDisplayFieldIds) {
+  setCheckboxValue(`pickerDisplayField_${field}`, config.pickerDisplayFields.includes(field));
+}
 setInputValue('sourcesJson', JSON.stringify(config.sources.length ? config.sources : defaultSources, null, 2));
 
 document.getElementById('save')?.addEventListener('click', () => {
@@ -38,6 +44,7 @@ document.getElementById('save')?.addEventListener('click', () => {
       templateSourcesJsonField: getInputValue('templateSourcesJsonField'),
       outputAppId: getInputValue('outputAppId'),
       outputReportIdField: getInputValue('outputReportIdField'),
+      outputReportNameField: getInputValue('outputReportNameField'),
       outputStoreField: getInputValue('outputStoreField'),
       outputBaseDateField: getInputValue('outputBaseDateField'),
       outputPeriodStartField: getInputValue('outputPeriodStartField'),
@@ -48,6 +55,7 @@ document.getElementById('save')?.addEventListener('click', () => {
       outputStatusField: getInputValue('outputStatusField'),
       outputMemoField: getInputValue('outputMemoField'),
       baseDateRule: 'yesterday' as BaseDateRule,
+      pickerDisplayFields: pickerDisplayFieldIds.filter((field) => getCheckboxValue(`pickerDisplayField_${field}`)),
       sources: parseTemplateSources(getInputValue('sourcesJson'), defaultSources)
     };
 
@@ -76,4 +84,16 @@ function getInputValue(id: string): string {
     return element.value.trim();
   }
   return '';
+}
+
+function setCheckboxValue(id: string, checked: boolean): void {
+  const element = document.getElementById(id);
+  if (element instanceof HTMLInputElement) {
+    element.checked = checked;
+  }
+}
+
+function getCheckboxValue(id: string): boolean {
+  const element = document.getElementById(id);
+  return element instanceof HTMLInputElement && element.checked;
 }

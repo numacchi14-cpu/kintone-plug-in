@@ -50,7 +50,7 @@ try {
   const { calculateDateRange, resolveBaseDate } = await import(pathToFileURL(dateRulesOutput).href);
   const { buildSourceQuery, sourceDateRange, mergeSourceRanges } = await import(pathToFileURL(queryOutput).href);
   const { createInitialTemplate, fillReportTemplate, validateReportTemplate, fixSheetPrElementOrder } = require(excelOutput);
-  const { parseTemplateSources } = await import(pathToFileURL(configOutput).href);
+  const { parsePluginConfig, serializePluginConfig, parseTemplateSources } = await import(pathToFileURL(configOutput).href);
 
   assertEqual(
     resolveBaseDate('yesterday', new Date(2026, 7, 1), ''),
@@ -321,6 +321,64 @@ try {
     parsedSources[0].filters[0].dateRule,
     'baseFirstHalf',
     'JSON文字列からのパースでも新しい日付ルール（上半期）が保持される（sameDayへ差し替わらない）'
+  );
+
+  // 選択欄の表示項目（pickerDisplayFields）の往復変換テスト（2026-08-16追加）。
+  // この機能追加前に保存された設定（キー自体が無い）では、従来どおり全項目表示になること
+  // （後方互換）、全チェックを外した設定（キーはあるが空文字列）は「何も表示しない」として
+  // 区別されること、不正な値が混じっていても既知の4値だけが残ることを確認する。
+  const configWithoutPickerFields = parsePluginConfig({ mode: 'output' });
+  assertDeepEqual(
+    configWithoutPickerFields.pickerDisplayFields,
+    ['reportType', 'store', 'yesterdayBase', 'recordBase'],
+    'pickerDisplayFieldsキーが無い設定は全項目表示（後方互換）'
+  );
+
+  const configWithAllUnchecked = parsePluginConfig({ mode: 'output', pickerDisplayFields: '' });
+  assertDeepEqual(
+    configWithAllUnchecked.pickerDisplayFields,
+    [],
+    'pickerDisplayFieldsが空文字列の設定は「表示項目なし」として扱う'
+  );
+
+  const configWithSomeFields = parsePluginConfig({
+    mode: 'output',
+    pickerDisplayFields: 'store,recordBase,unknownValue'
+  });
+  assertDeepEqual(
+    configWithSomeFields.pickerDisplayFields,
+    ['store', 'recordBase'],
+    'pickerDisplayFieldsの不正な値は除外し、既知の値だけを残す'
+  );
+
+  const serialized = serializePluginConfig(configWithSomeFields);
+  assertEqual(serialized.pickerDisplayFields, 'store,recordBase', 'pickerDisplayFieldsをカンマ区切りで保存');
+  assertDeepEqual(
+    parsePluginConfig(serialized).pickerDisplayFields,
+    ['store', 'recordBase'],
+    'pickerDisplayFieldsの保存→再読込で内容が変わらない'
+  );
+
+  // 選択欄への「帳票名」表示対応（2026-08-16追加）。帳票名フィールドコード（outputReportNameField）は
+  // 出力アプリに無い場合もある任意項目のため、既定値は空文字列のまま。'reportName'が許可リストに
+  // 追加され、他の項目と同じように保存→再読込できることを確認する。
+  const configWithReportName = parsePluginConfig({
+    mode: 'output',
+    outputReportNameField: 'report_name',
+    pickerDisplayFields: 'reportType,reportName'
+  });
+  assertEqual(configWithReportName.outputReportNameField, 'report_name', '帳票名フィールドコードを読み込む');
+  assertDeepEqual(
+    configWithReportName.pickerDisplayFields,
+    ['reportType', 'reportName'],
+    'pickerDisplayFieldsに「帳票名」を含められる'
+  );
+  const serializedWithReportName = serializePluginConfig(configWithReportName);
+  assertEqual(serializedWithReportName.outputReportNameField, 'report_name', '帳票名フィールドコードを保存');
+  assertEqual(
+    parsePluginConfig({}).outputReportNameField,
+    '',
+    '帳票名フィールドコードが未設定の設定は空文字列のまま（既存出力アプリに無くても壊れない）'
   );
 
   console.log('Smoke tests passed.');
