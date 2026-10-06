@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "node scripts/smoke-test.mjs",
+    "test": "node scripts/smoke-test.mjs && node scripts/pl-template-test.mjs",
+    "test:pl:excel": "node scripts/pl-template-test.mjs --excel",
     "typecheck": "tsc --noEmit",
     "package": "npm run build && node scripts/build-plugin.mjs"
   },
