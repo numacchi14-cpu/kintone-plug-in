@@ -266,6 +266,57 @@ try {
   assertEqual(outputBook.getWorksheet('帳票')?.getCell('A1').value?.formula, 'SUM(1,2)', '数式プレースホルダーを変換');
   assertEqual(outputBook.getWorksheet('帳票')?.getCell('A1').numFmt, '#,###,;[Red]"△ "#,###,', '数式プレースホルダーの表示書式を維持');
 
+  // 「設定」シートのレイアウト・型は、PL Managementのテンプレート（単月・累計・時系列）が数式で
+  // 直接参照している互換性の約束（SPEC.md「設定シートの互換性の約束」）。ここを変えるとKintone上の
+  // 損益管理システムの帳票が壊れるため、他プロジェクト向けの改修でも変更してはならない。
+  // - 1〜8行目のラベル順：B4=基準日、B5/B6=対象期間開始/終了、B7=出力日
+  // - B5/B6はISO形式の文字列（テンプレートはDATEVALUE(設定!B5)、LEFT(設定!$B$6,8)&"01"を使う）
+  // - B7はExcel日付（テンプレートはTEXT(設定!B7,"[$-ja-JP-x-gannen]ggge年m月d日")を使う）
+  // - 9行目は書き込まない（時系列テンプレートが9行目O〜T列に補助セルを置いている）
+  // - 取得元メタデータは10行目から始まる
+  const settingsContractTemplate = new ExcelJS.Workbook();
+  await settingsContractTemplate.xlsx.load(Buffer.from(reportTemplateBuffer));
+  const settingsContractSheet = settingsContractTemplate.getWorksheet('設定');
+  settingsContractSheet.getCell('O9').value = '補助セル';
+  settingsContractSheet.getCell('P9').value = '__PL_FORMULA__:=DATEVALUE(B5)';
+  const allocationSource = { ...excelSource, key: 'allocation', label: '配賦設定履歴', appId: '2', sheetName: '配賦', tableName: 'tbl_allocation' };
+  settingsContractTemplate.addWorksheet('配賦').getRow(1).values = ['日付', '店舗名', '実績_総売上'];
+  const settingsContractOutput = await fillReportTemplate(
+    await settingsContractTemplate.xlsx.writeBuffer(),
+    {
+      reportId: 'timeseries_department_pl',
+      reportName: 'テスト帳票',
+      store: '',
+      baseDate: '2025-12-15',
+      periodStart: '2025-01-01',
+      periodEnd: '2025-06-30',
+      exportedAt: '2026-07-15T10:20:30',
+      exporter: 'テスト'
+    },
+    [
+      { source: excelSource, rows: [], periodStart: '2025-01-01', periodEnd: '2025-06-30', query: '' },
+      { source: allocationSource, rows: [], periodStart: '', periodEnd: '', query: '' }
+    ]
+  );
+  const settingsContractBook = new ExcelJS.Workbook();
+  await settingsContractBook.xlsx.load(Buffer.from(settingsContractOutput));
+  const settingsSheet = settingsContractBook.getWorksheet('設定');
+  assertDeepEqual(
+    [1, 2, 3, 4, 5, 6, 7, 8].map((row) => settingsSheet.getCell(row, 1).value),
+    ['帳票ID', '帳票名', '対象店舗', '基準日', '対象期間開始', '対象期間終了', '出力日', '出力者'],
+    '設定シート1〜8行目のラベル順（テンプレートが設定!B4〜B7を参照）'
+  );
+  assertEqual(settingsSheet.getCell('B5').value, '2025-01-01', '設定!B5（対象期間開始）はISO形式の文字列');
+  assertEqual(settingsSheet.getCell('B6').value, '2025-06-30', '設定!B6（対象期間終了）はISO形式の文字列');
+  assertEqual(settingsSheet.getCell('B7').value instanceof Date, true, '設定!B7（出力日）はExcel日付');
+  assertEqual(settingsSheet.getCell('A9').value, null, '設定シート9行目A列に書き込まない');
+  assertEqual(settingsSheet.getCell('B9').value, null, '設定シート9行目B列に書き込まない');
+  assertEqual(settingsSheet.getCell('O9').value, '補助セル', '設定シート9行目の補助セルを保持');
+  assertEqual(settingsSheet.getCell('P9').value?.formula, 'DATEVALUE(B5)', '設定シート9行目の数式プレースホルダーを変換');
+  assertEqual(settingsSheet.getCell('A10').value, '取得元アプリ数', '取得元メタデータは10行目から始まる');
+  assertEqual(settingsSheet.getCell('B10').value, 2, '取得元アプリ数');
+  assertEqual(settingsSheet.getCell('A11').value, '取得元1名', '取得元1のメタデータは11行目から始まる');
+
   // ExcelJSが<sheetPr>の子要素順序（正しくはtabColor, outlinePr, pageSetUpPrの順）を崩して
   // 書き出すことがあり、OOXMLスキーマ順序違反となってExcelがシート内容ごと読み込み拒否・破棄する
   // 不具合の回帰テスト（2026-08-15発見・修正）。
