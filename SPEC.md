@@ -258,6 +258,15 @@ Excel側で次を管理する。
 
 出力ファイルでは、`設定`、`集計`、取得元アプリの元データ用シートを非表示にする。利用者に表示するシートは、完成版テンプレートに含めた帳票シートだけとし、その先頭の帳票シートをアクティブにする。帳票シートがない初期テンプレートは、誤って全シートを非表示にしない。
 
+### グラフ（v0.17.0以降）
+
+完成版テンプレートのワークシートに置いたグラフ（Excelで置いたもの、openpyxlで置いたもの）は、出力ファイルの同じシートの同じ位置にそのまま残る。グラフの参照範囲（例：`集計!$U$2:$AF$2`）もテンプレートのまま。出力ファイルはExcelで開いたときに全再計算されるため（`fullCalcOnLoad`）、グラフは取得データで計算した値を表示する。
+
+- グラフが参照する範囲は、非表示になる`集計`シートに置いてよい。シートが非表示でも、グラフはデータを描く（Excelの既定の「非表示の行と列のデータを表示する」がオフ＝`plotVisOnly`のままでも描かれることを、2026-10-14に出力ファイルのグラフを画像に書き出して確認）。描かれないのは、参照範囲の行・列そのものを非表示にした場合で、そのときは同設定をオンにする。
+- グラフと画像を同じシートに置くことには対応していない（テンプレート検証・帳票出力でエラーになる）。画像は別のシートに置く。グラフのないシートの画像は従来どおりExcelJSが扱う。
+- グラフシート（シート全体が1つのグラフのシート）は対象外。グラフはワークシート上に置く。
+- 仕組みと検証は「テンプレートのグラフを出力ファイルへ残す機能追加（v0.17.0、2026-10-14）」を参照。
+
 ## 取得元アプリ設定JSON
 
 テンプレート管理レコードの `sources_json` に配列として保存する。
@@ -707,6 +716,7 @@ src/
     config.ts
     dateRules.ts
     defaults.ts
+    charts.ts
     excel.ts
     kintoneApi.ts
     types.ts
@@ -721,6 +731,12 @@ scripts/
   build-plugin.mjs
   smoke-test.mjs
   pl-template-test.mjs
+  chart-template-test.mjs
+  fixtures/
+    make-chart-templates.mjs
+    chart-base.xlsx
+    chart-excel.xlsx
+    chart-openpyxl.xlsx
 ```
 
 ## ビルドと検証
@@ -732,10 +748,20 @@ npm.cmd install
 npm.cmd run typecheck
 npm.cmd test
 npm.cmd run test:pl:excel
+npm.cmd run test:charts:excel
 npm.cmd run package
 ```
 
-`npm.cmd test` は `scripts/smoke-test.mjs`（単体の回帰テスト）と `scripts/pl-template-test.mjs`（PL Managementの実テンプレートを使う回帰テスト）を続けて実行する。`npm.cmd run test:pl:excel` は、後者に実際のExcelでの検査を加えたもので、リリース前に実行する。
+`npm.cmd test` は `scripts/smoke-test.mjs`（単体の回帰テスト）、`scripts/pl-template-test.mjs`（PL Managementの実テンプレートを使う回帰テスト）、`scripts/chart-template-test.mjs`（グラフ入りテンプレートのテスト、v0.17.0）を続けて実行する。`npm.cmd run test:pl:excel` と `npm.cmd run test:charts:excel` は、それぞれに実際のExcelでの検査を加えたもので、リリース前に実行する。
+
+### グラフ入りテンプレートのテスト
+
+`scripts/chart-template-test.mjs`（2026-10-14追加）。テンプレートのグラフが出力ファイルに残ることを、実際の出力処理（`fillReportTemplate`）で確かめる。
+
+- **テンプレート**：`scripts/fixtures/` の合成ファイル（業務データなし、作成者情報は消してある）。`chart-excel.xlsx` はExcelで折れ線グラフを2つ置いたもの（相対パスの関係、chartStyle・colorsの部品つき）、`chart-openpyxl.xlsx` はopenpyxlで1つ置いたもの（描画・グラフへの関係が絶対パス、接頭辞なしの名前空間の描画）。さらにテスト内で、`chart-excel.xlsx` の`集計`シートに画像を足したテンプレート（ExcelJSが書き出す画像の描画と、戻すグラフの描画の部品名が重ならないことの確認）を作る。作り直すときは `node scripts/fixtures/make-chart-templates.mjs`（Windows＋Excel＋Python／openpyxlが必要）。
+- **ExcelJS・ZIPでの検査（`npm.cmd test`）**：帳票シートの`<drawing>`要素が1つでスキーマ上の正しい位置にある／シートの関係・描画の関係・グラフの関係（chartStyle・colors）がすべて存在する部品を相対パスで指す／描画・グラフ・スタイル・色の部品の内容がテンプレートと同一／Content TypesのOverride／別シートの画像が残る／数式プレースホルダーの変換。グラフのないテンプレートは、ExcelJSへ渡すバッファが元のものと同一（`extractTemplateCharts`）。グラフと画像が同じシートにあるテンプレートはエラーになる。
+- **Excelでの検査（`npm.cmd run test:charts:excel`、Windows＋Excelが必要）**：出力ファイルをExcel（COM）で開き、全再計算して、帳票シートの`ChartObjects().Count`がテンプレートどおり、売上の系列が`集計!$B$3:$M$3`を参照し、値が取得データの月別合計と一致すること、別シートの画像が残っていることを確かめる。
+- **検出できることの確認**：`<drawing>`をスキーマ違反の位置（`sheetData`の直後）へ動かした出力ファイルは、Excelの`Workbooks.Open`が失敗する（＝このテストが失敗する）ことを確認済み。グラフを戻さなければグラフ数0で失敗する。
 
 ### PL Managementの実テンプレートを使う回帰テスト
 
@@ -762,7 +788,7 @@ dist/kintone-excel-report-plugin-v<version>.zip
 dist/kintone-excel-report-plugin.zip
 ```
 
-`<version>` は `plugin/manifest.json` のバージョン（2026-10-14時点の現行版は `v0.16.14`。同日Kintoneへ反映済み）。
+`<version>` は `plugin/manifest.json` のバージョン（2026-10-14時点の現行版は `v0.17.0`。同日Kintoneへ反映済み）。
 
 バージョン付きzipは履歴確認用、バージョンなしzipは最新版用。どちらも同じ内容。
 
@@ -1092,9 +1118,40 @@ v0.16.12の実装後、ユーザーから「帳票種類（`report_type`のコ�
 - `npm.cmd run typecheck`／`npm.cmd test`／`npm.cmd run test:pl:excel`（PL Managementの実テンプレート8本、Excelで開いて全再計算）／`npm.cmd run package`すべて成功（2026-10-14）。
 - **実機確認（2026-10-14、ユーザーがKintoneへ反映して確認、問題なし。受入完了）**：(1) 営業分析の出力アプリ167で「出力日時フィールドコード」に日時型フィールドを指定し直して出力し、エラーにならず出力日時が正しい時刻で入ること。(2) 出力ファイルの`設定!B7`が出力した時刻になっていること。(3) `CLAUDE.md`のガードレール5のとおり、PL Managementの単月・累計・時系列を1回ずつ出力し、出力年月日が当日になっていること。
 
+## テンプレートのグラフを出力ファイルへ残す機能追加（v0.17.0、2026-10-14）
+
+営業分析（`C:\Projects\営業分析`）の日平均帳票で、完成版テンプレートの帳票シートに折れ線グラフを2つ置く（参照先は`集計`シートの補助範囲）ための追加。
+
+### 背景（2026-10-14、営業分析のセッションで確認）
+
+- ExcelJSはグラフを扱えない。Excelで置いたグラフを含むブック（旧資料の日平均、折れ線グラフ20個）を読み込んで書き出すと、`xl/charts`・`xl/drawings`の部品が1つも残らない。
+- openpyxlで置いたグラフを含むテンプレートは、`wb.xlsx.load`が`TypeError: Cannot read properties of undefined (reading 'anchors')`で失敗する（利用者には「完成版テンプレートExcelを読み込めません」と表示される）。原因は、openpyxlが描画のXMLを接頭辞なしの既定の名前空間（`<wsDr xmlns="...spreadsheetDrawing">`）で書くこと。ExcelJSの描画の読み込みは`xdr:`接頭辞を前提にしており、解析結果が`undefined`になって、描画の関係と突き合わせる処理で例外になる。関係の絶対パス（`/xl/...`）が原因ではない（営業分析の`build_template.py`は絶対パスを相対パスへ直しているが、それでも読み込めない）。
+
+### 仕組み（`src/shared/charts.ts`）
+
+ExcelJSには手を入れず、前後の処理をJSZipで追加した。
+
+1. **読み込み前（`extractTemplateCharts`、`loadTemplateWorkbook`から呼ぶ）**：ブック内の各ワークシートの描画のうち、グラフ（`graphicData`の`uri`がchartまたはchartex）を含むものを探す。見つかったら、そのシートの`<drawing r:id>`要素とシートの関係を削除し、描画の部品も外したブックをExcelJSへ渡す。グラフと画像（`pic`要素）が同じ描画にある場合は「グラフと画像を同じシートに置くことには対応していません」のエラーにする。グラフを含む描画がなければ、元のバッファをそのまま渡す（何も変えない）。`fillReportTemplate`・`validateReportTemplate`（テンプレート管理の「テンプレート検証」を含む）の両方がこの経路を通る。
+2. **書き出し後（`restoreTemplateCharts`、`ensureAutomaticRecalculation`・`fixSheetPrElementOrder`の後）**：テンプレートのシートと出力ファイルのシートをシート名で対応させる（`workbook.xml`と関係から部品名を引く。ExcelJSは`sheetN.xml`の番号を振り直すことがある）。描画のXML、その関係、関係が指すグラフ、グラフの関係が指す部品（chartStyle・colorsなど）を、出力ファイルの既存の部品と重ならない名前でコピーし、関係の参照先を相対パスで書き直す。シートの関係に重ならないIdで描画の関係を足し、`<drawing r:id>`をスキーマ上の正しい位置（`pageSetup`・`headerFooter`・`rowBreaks`・`colBreaks`・`customProperties`・`cellWatches`・`ignoredErrors`・`smartTags`の後、`legacyDrawing`・`legacyDrawingHF`・`drawingHF`・`picture`・`oleObjects`・`controls`・`webPublishItems`・`tableParts`・`extLst`の前）へ入れる。コピーした部品のContent Types（テンプレートのOverride、なければ拡張子のDefault）をOverrideとして足す。出力ファイルのそのシートにすでに描画がある場合は、壊さずにエラーにする。
+3. 描画・グラフのXMLはテンプレートのバイト列のままコピーする（座標・書式・参照範囲を変えない）。グラフのキャッシュ値はテンプレート作成時のままだが、出力ファイルはExcelで開いたときに全再計算されるため、表示は取得データで計算した値になる（`test:charts:excel`で確認）。
+4. 出力ファイルを完成版テンプレートとして登録し直しても、読み込み前の処理でグラフが外されるため読み込める。
+
+### PL Managementへの影響
+
+- PL Managementのテンプレート（8本）にはグラフがないため、ExcelJSへ渡すバッファも、書き出し後の処理も従来と同じ（グラフの戻し処理は呼ばれない）。
+- 確認：変更前（`HEAD`の`excel.ts`）と変更後の`fillReportTemplate`に、`pl-template-test.mjs`と同じ8テンプレート・同じ合成データ・固定した現在時刻を与え、出力ファイルの全部品（計200部品）をバイト単位で比較して、差異0件（2026-10-14、一時スクリプトで実施）。
+- 設定シートの互換性の約束（B1:B8、9行目、10行目以降）には触れていない。
+
+### 検証（2026-10-14）
+
+- `npm.cmd run typecheck`／`npm.cmd test`（smoke・PL実テンプレート・グラフ）／`npm.cmd run test:pl:excel`／`npm.cmd run test:charts:excel`／`npm.cmd run package`すべて成功。
+- 営業分析の日平均の完成版テンプレート（openpyxlで置いたグラフ2つ）のコピーを、取得データ0件で`fillReportTemplate`に通し、Excelで開いて`日平均`シートのグラフが2つ（参照先`集計!$U$2:$AF$2`・`集計!$U$4:$AF$4`）あることを確認した。実データでの確認は営業分析側で行う。
+- **実機確認（2026-10-14、ユーザーがKintoneへ反映して確認、問題なし。受入完了）**：(1) `CLAUDE.md`のガードレール5のとおり、PL Managementの単月・累計・時系列を1回ずつ出力してスポット確認。(2) 営業分析の出力アプリ167で日平均を出力し、グラフが表示されること。プルリクエスト: numacchi14-cpu/kintone-plug-in#1（`agent/template-charts` → `main`）。
+
 ## 既知の制約
 
 - ExcelJSはExcel数式を計算しない
+- テンプレートのグラフはワークシート上のものだけを出力ファイルへ戻す。グラフと画像を同じシートに置くこと、グラフシートは未対応（v0.17.0）
 - Excelで開いたときに再計算される想定
 - 環境によってはF9再計算が必要になる可能性がある
 - テンプレート管理アプリ上で完成版テンプレート添付を1ファイルに置き換える保存補助は実装済み

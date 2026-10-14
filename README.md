@@ -17,6 +17,7 @@
 - 設定シートへ出力条件を書き込み
 - 元データ用シートへkintoneレコードを書き込み
 - 集計シートの数式・書式は触らず保持
+- 完成版テンプレートに置いたグラフ（折れ線など）を出力ファイルへそのまま残す（v0.17.0以降。グラフと画像を同じシートに置くことには未対応）
 - 基準日は通常、実行日の前日を使う。手入力済みの基準日で出力するボタンも利用可能
 - 帳票出力時は保存済み・手入力の基準日ではなく、その時点の昨日を優先
 - 日付抽出条件ごとに月次・年次などの期間ルールを設定可能
@@ -34,11 +35,11 @@ npm.cmd run package
 生成されるzip:
 
 ```text
-dist/kintone-excel-report-plugin-v0.16.14.zip
+dist/kintone-excel-report-plugin-v0.17.0.zip
 dist/kintone-excel-report-plugin.zip
 ```
 
-`v0.16.14` 付きのzipは履歴確認用、バージョンなしのzipは最新版用です。どちらも中身は同じです。
+`v0.17.0` 付きのzipは履歴確認用、バージョンなしのzipは最新版用です。どちらも中身は同じです。
 
 各バージョンの変更内容は [CHANGELOG.md](C:/Projects/kintone-plug-in/CHANGELOG.md) に記録します。
 
@@ -234,7 +235,7 @@ npm.cmd run package
 アップロードするファイル:
 
 ```text
-dist/kintone-excel-report-plugin-v0.16.14.zip
+dist/kintone-excel-report-plugin-v0.17.0.zip
 ```
 
 最新版だけを使う場合は、次のファイルをアップロードしても同じです。
