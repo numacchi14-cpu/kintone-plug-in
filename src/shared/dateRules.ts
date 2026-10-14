@@ -161,6 +161,30 @@ export function formatDate(value: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+// 出力日時の表示用文字列（ローカル時刻、タイムゾーンなし）。設定!B7・出力条件メモ・文字列フィールドに使う。
+export function formatLocalDateTime(value: Date): string {
+  const hours = String(value.getHours()).padStart(2, '0');
+  const minutes = String(value.getMinutes()).padStart(2, '0');
+  const seconds = String(value.getSeconds()).padStart(2, '0');
+  return `${formatDate(value)}T${hours}:${minutes}:${seconds}`;
+}
+
+// Kintoneの日時フィールドへ登録する値。REST APIはタイムゾーン（Zまたは±HH:MM）付きのISO 8601を要求する。
+export function formatKintoneDateTime(value: Date): string {
+  return value.toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+// 出力日時を書き込む先のフィールド型に合わせた値。型が分からない場合は従来どおりローカル時刻の文字列。
+export function exportedAtFieldValue(value: Date, fieldType: string | undefined): string {
+  if (fieldType === 'DATETIME') {
+    return formatKintoneDateTime(value);
+  }
+  if (fieldType === 'DATE') {
+    return formatDate(value);
+  }
+  return formatLocalDateTime(value);
+}
+
 export function parseDate(value: string): Date {
   const [year, month, day] = value.split('-').map(Number);
   return new Date(year, month - 1, day);

@@ -1,5 +1,11 @@
 import { parsePluginConfig, parseTemplateSources } from './shared/config';
-import { calculateDateRange, formatDate, resolveBaseDate } from './shared/dateRules';
+import {
+  calculateDateRange,
+  exportedAtFieldValue,
+  formatDate,
+  formatLocalDateTime,
+  resolveBaseDate
+} from './shared/dateRules';
 import { buildFileName, createInitialTemplate, downloadWorkbook, fillReportTemplate, validateReportTemplate } from './shared/excel';
 import {
   buildSourceQuery,
@@ -1607,7 +1613,8 @@ async function exportReport(
 
   const sourceRows = await fetchSourceRows(sources, store, baseDate, record, setStatus);
   const wholeRange = mergeSourceRanges(sourceRows, baseDate);
-  const exportedAt = formatDateTime(new Date());
+  const exportedAtDate = new Date();
+  const exportedAt = formatLocalDateTime(exportedAtDate);
   const context: ReportContext = {
     reportId,
     reportName,
@@ -1627,7 +1634,14 @@ async function exportReport(
   setStatus('Excelをダウンロード中...');
   downloadWorkbook(outputBuffer, fileName);
   setStatus('出力履歴を保存中...');
-  await saveOutputHistory(config, context, fileName, outputRecordId(record));
+  const exportedAtFieldType = record[config.outputExportedAtField]?.type;
+  await saveOutputHistory(
+    config,
+    context,
+    fileName,
+    exportedAtFieldValue(exportedAtDate, exportedAtFieldType),
+    outputRecordId(record)
+  );
 }
 
 async function validateOutputReadiness(
@@ -1937,6 +1951,7 @@ async function saveOutputHistory(
   config: PluginConfig,
   context: ReportContext,
   fileName: string,
+  exportedAtValue: string,
   targetRecordId = ''
 ): Promise<void> {
   const recordId = targetRecordId || String(kintone.app.record.getId?.() || '');
@@ -1946,7 +1961,8 @@ async function saveOutputHistory(
   addHistoryField(record, config.outputBaseDateField, context.baseDate);
   addHistoryField(record, config.outputPeriodStartField, context.periodStart);
   addHistoryField(record, config.outputPeriodEndField, context.periodEnd);
-  addHistoryField(record, config.outputExportedAtField, context.exportedAt);
+  // 日時フィールドならUTC（Z付き）、日付フィールドなら日付だけ、それ以外は従来どおりの表示用文字列
+  addHistoryField(record, config.outputExportedAtField, exportedAtValue);
   addHistoryField(record, config.outputExporterField, context.exporter);
   addHistoryField(record, config.outputFileNameField, fileName);
   addHistoryField(record, config.outputStatusField, '出力済み');
@@ -1984,14 +2000,6 @@ function addHistoryField(record: Record<string, { value: string }>, fieldCode: s
   if (fieldCode) {
     record[fieldCode] = { value };
   }
-}
-
-function formatDateTime(value: Date): string {
-  const date = formatDate(value);
-  const hours = String(value.getHours()).padStart(2, '0');
-  const minutes = String(value.getMinutes()).padStart(2, '0');
-  const seconds = String(value.getSeconds()).padStart(2, '0');
-  return `${date}T${hours}:${minutes}:${seconds}`;
 }
 
 async function runWithStatus(

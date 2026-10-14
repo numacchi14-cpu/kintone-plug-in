@@ -34,11 +34,11 @@ npm.cmd run package
 生成されるzip:
 
 ```text
-dist/kintone-excel-report-plugin-v0.15.0.zip
+dist/kintone-excel-report-plugin-v0.16.14.zip
 dist/kintone-excel-report-plugin.zip
 ```
 
-`v0.15.0` 付きのzipは履歴確認用、バージョンなしのzipは最新版用です。どちらも中身は同じです。
+`v0.16.14` 付きのzipは履歴確認用、バージョンなしのzipは最新版用です。どちらも中身は同じです。
 
 各バージョンの変更内容は [CHANGELOG.md](C:/Projects/kintone-plug-in/CHANGELOG.md) に記録します。
 
@@ -234,7 +234,7 @@ npm.cmd run package
 アップロードするファイル:
 
 ```text
-dist/kintone-excel-report-plugin-v0.15.0.zip
+dist/kintone-excel-report-plugin-v0.16.14.zip
 ```
 
 最新版だけを使う場合は、次のファイルをアップロードしても同じです。

@@ -351,13 +351,17 @@ function normalizeDateTimeValue(value: unknown): ExcelJS.CellValue {
     return value;
   }
 
+  // ExcelJSはDateをUTCとしてシリアル値にするため、ローカル時刻の年月日時分秒をそのままUTCで組み立てる。
+  // こうするとシリアル値が出力した時刻（壁時計）と一致する（ローカル時刻で組み立てるとJSTでは9時間早くなる）。
   return new Date(
-    Number(match[1]),
-    Number(match[2]) - 1,
-    Number(match[3]),
-    Number(match[4]),
-    Number(match[5]),
-    Number(match[6] ?? 0)
+    Date.UTC(
+      Number(match[1]),
+      Number(match[2]) - 1,
+      Number(match[3]),
+      Number(match[4]),
+      Number(match[5]),
+      Number(match[6] ?? 0)
+    )
   );
 }
 

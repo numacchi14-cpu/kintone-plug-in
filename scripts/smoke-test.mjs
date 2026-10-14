@@ -47,7 +47,13 @@ try {
     })
   ]);
 
-  const { calculateDateRange, resolveBaseDate } = await import(pathToFileURL(dateRulesOutput).href);
+  const {
+    calculateDateRange,
+    resolveBaseDate,
+    exportedAtFieldValue,
+    formatKintoneDateTime,
+    formatLocalDateTime
+  } = await import(pathToFileURL(dateRulesOutput).href);
   const { buildSourceQuery, sourceDateRange, mergeSourceRanges } = await import(pathToFileURL(queryOutput).href);
   const { createInitialTemplate, fillReportTemplate, validateReportTemplate, fixSheetPrElementOrder } = require(excelOutput);
   const { parsePluginConfig, serializePluginConfig, parseTemplateSources } = await import(pathToFileURL(configOutput).href);
@@ -311,6 +317,66 @@ try {
   assertEqual(settingsSheet.getCell('B5').value, '2025-01-01', '設定!B5（対象期間開始）はISO形式の文字列');
   assertEqual(settingsSheet.getCell('B6').value, '2025-06-30', '設定!B6（対象期間終了）はISO形式の文字列');
   assertEqual(settingsSheet.getCell('B7').value instanceof Date, true, '設定!B7（出力日）はExcel日付');
+  assertEqual(
+    excelSerialSeconds(settingsSheet.getCell('B7').value),
+    excelSerialSeconds(Date.UTC(2026, 6, 15, 10, 20, 30)),
+    '設定!B7（出力日）のシリアル値は出力時刻（壁時計）と一致'
+  );
+
+  // 設定!B7が9時間早く書き込まれていた不具合（v0.16.14で修正）の回帰テスト。ExcelJSはDateをUTCで
+  // シリアル値にするため、ローカル時刻で組み立てたDateを渡すとJSTでは9時間早くなり、0:00〜8:59の
+  // 出力ではTEXT(設定!B7,"[$-ja-JP-x-gannen]ggge年m月d日")が前日を表示していた。UTC環境では
+  // 再現しないため、タイムゾーンをJSTに固定し、早朝の出力日時で確かめる。
+  const originalTimeZone = process.env.TZ;
+  process.env.TZ = 'Asia/Tokyo';
+  try {
+    assertEqual(new Date(2026, 9, 14, 8, 30).getTimezoneOffset(), -540, 'テスト中のタイムゾーンはJST');
+    const earlyMorningOutput = await fillReportTemplate(
+      reportTemplateBuffer,
+      {
+        reportId: 'daily_average',
+        reportName: 'テスト帳票',
+        store: '本店',
+        baseDate: '2026-10-13',
+        periodStart: '2026-01-01',
+        periodEnd: '2026-10-13',
+        exportedAt: '2026-10-14T08:30:00',
+        exporter: 'テスト'
+      },
+      [{ source: excelSource, rows: [], periodStart: '2026-01-01', periodEnd: '2026-10-13', query: '' }]
+    );
+    const earlyMorningBook = new ExcelJS.Workbook();
+    await earlyMorningBook.xlsx.load(Buffer.from(earlyMorningOutput));
+    const earlyMorningB7 = earlyMorningBook.getWorksheet('設定').getCell('B7').value;
+    assertEqual(earlyMorningB7 instanceof Date, true, '早朝の出力でも設定!B7はExcel日付');
+    // 2026-10-14 08:30:00 = シリアル値 46309 + 8.5/24
+    assertEqual(
+      excelSerialSeconds(earlyMorningB7),
+      46309 * 86400 + 8 * 3600 + 30 * 60,
+      '設定!B7のシリアル値は2026-10-14 08:30（前日にならない）'
+    );
+
+    // 出力日時フィールドへの書き込み値（CB_VA01の修正）。Kintoneの日時フィールドはタイムゾーン付きの
+    // ISO 8601が必須。文字列フィールドと出力条件メモは従来どおりローカル時刻の表示用文字列。
+    const exportedAtDate = new Date(2026, 9, 14, 8, 30, 15, 123);
+    assertEqual(formatLocalDateTime(exportedAtDate), '2026-10-14T08:30:15', '出力日時の表示用文字列はローカル時刻');
+    assertEqual(formatKintoneDateTime(exportedAtDate), '2026-10-13T23:30:15Z', '日時フィールド用の値はUTC（Z付き）');
+    assertEqual(exportedAtFieldValue(exportedAtDate, 'DATETIME'), '2026-10-13T23:30:15Z', '出力日時フィールドが日時型ならUTC');
+    assertEqual(exportedAtFieldValue(exportedAtDate, 'DATE'), '2026-10-14', '出力日時フィールドが日付型ならローカルの日付');
+    assertEqual(
+      exportedAtFieldValue(exportedAtDate, 'SINGLE_LINE_TEXT'),
+      '2026-10-14T08:30:15',
+      '出力日時フィールドが文字列なら従来どおり'
+    );
+    assertEqual(exportedAtFieldValue(exportedAtDate, undefined), '2026-10-14T08:30:15', '型が分からなければ従来どおり');
+  } finally {
+    if (originalTimeZone === undefined) {
+      delete process.env.TZ;
+    } else {
+      process.env.TZ = originalTimeZone;
+    }
+  }
+
   assertEqual(settingsSheet.getCell('A9').value, null, '設定シート9行目A列に書き込まない');
   assertEqual(settingsSheet.getCell('B9').value, null, '設定シート9行目B列に書き込まない');
   assertEqual(settingsSheet.getCell('O9').value, '補助セル', '設定シート9行目の補助セルを保持');
@@ -453,6 +519,12 @@ function assertEqual(actual, expected, label) {
   if (actual !== expected) {
     throw new Error(`${label}\nexpected: ${expected}\nactual:   ${actual}`);
   }
+}
+
+// ExcelJSは読み込んだ日付セルをUTCのDateで返す。秒単位のシリアル値へ戻して比較する（浮動小数の誤差を避ける）。
+function excelSerialSeconds(value) {
+  const time = value instanceof Date ? value.getTime() : value;
+  return Math.round(time / 1000) + 25569 * 86400;
 }
 
 function assertDeepEqual(actual, expected, label) {
