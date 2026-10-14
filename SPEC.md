@@ -731,7 +731,10 @@ scripts/
   build-plugin.mjs
   smoke-test.mjs
   pl-template-test.mjs
+  sales-template-test.mjs
   chart-template-test.mjs
+  lib/
+    template-test-runner.mjs
   fixtures/
     make-chart-templates.mjs
     chart-base.xlsx
@@ -748,11 +751,14 @@ npm.cmd install
 npm.cmd run typecheck
 npm.cmd test
 npm.cmd run test:pl:excel
+npm.cmd run test:sales:excel
 npm.cmd run test:charts:excel
 npm.cmd run package
 ```
 
-`npm.cmd test` は `scripts/smoke-test.mjs`（単体の回帰テスト）、`scripts/pl-template-test.mjs`（PL Managementの実テンプレートを使う回帰テスト）、`scripts/chart-template-test.mjs`（グラフ入りテンプレートのテスト、v0.17.0）を続けて実行する。`npm.cmd run test:pl:excel` と `npm.cmd run test:charts:excel` は、それぞれに実際のExcelでの検査を加えたもので、リリース前に実行する。
+`npm.cmd test` は `scripts/smoke-test.mjs`（単体の回帰テスト）、`scripts/pl-template-test.mjs`（PL Managementの実テンプレートを使う回帰テスト）、`scripts/sales-template-test.mjs`（営業分析の実テンプレートを使う回帰テスト、2026-10-14追加）、`scripts/chart-template-test.mjs`（グラフ入りテンプレートのテスト、v0.17.0）を続けて実行する。`npm.cmd run test:pl:excel`・`npm.cmd run test:sales:excel`・`npm.cmd run test:charts:excel` は、それぞれに実際のExcelでの検査を加えたもので、リリース前に実行する。
+
+実テンプレートを使う2つの回帰テストは、検査の中身を `scripts/lib/template-test-runner.mjs` で共通にしている（2026-10-14、PL側のテストから切り出した。PL側の検査内容は変えていない）。
 
 ### グラフ入りテンプレートのテスト
 
@@ -780,6 +786,21 @@ npm.cmd run package
 - **検出できることの確認**：プラグインを次のように壊すと、いずれもこのテストが失敗することを確認済み。B4〜B6をExcel日付で書き込む／設定項目を9つ目まで増やす（時系列の9行目の見出しを上書き）／取得元メタデータを書く前に10行目以降を行ごと消去する（時系列の`設定!C10:N10`が消える）／`<sheetPr>`の順序補正をやめる（単月・空港店版がv0.16.9と同じく破損し、Excelで開けない）。
 - **運用上の注意**：PL Management側でテンプレートを差し替えた場合（新しい修正版をテンプレート管理アプリへ登録した場合など）は、`scripts/pl-template-test.mjs` 冒頭の一覧（`cases`）も合わせて更新する。一覧のファイルが見つからない場合、このテストは失敗する。
 - **このテストで分からないこと**：金額が旧帳票と一致するか（数値の正しさ）は確認しない。それは実データでの全セル照合（本ファイルの累計・単月の照合手順）で行う。
+- 2026-10-14、検査の中身を `scripts/lib/template-test-runner.mjs` へ移した（営業分析のテストと共通化）。あわせて次の2点を足した：テンプレートのグラフ数の確認（PLのテンプレートはグラフなし＝出力にもグラフの部品が無いこと）、Excelでの検査で表示中のシートのグラフ数を数える。
+
+### 営業分析の実テンプレートを使う回帰テスト
+
+本番運用に入った営業分析（`C:\Projects\営業分析`）の帳票を、プラグインの改修から守るテスト（`scripts/sales-template-test.mjs`、2026-10-14追加）。検査の中身はPL Managementのテストと同じ（`scripts/lib/template-test-runner.mjs`）。
+
+- **対象**：日平均の完成版テンプレート（グラフ入り、グラフなし）と取得元アプリ設定JSON（`outputs/日平均-template/sources.json`）。ファイルは営業分析のフォルダ（既定 `C:\Projects\営業分析`、環境変数 `SALES_ANALYSIS_DIR` で変更可）から読み込み、このリポジトリにはコミットしない。フォルダが無い環境ではスキップする。
+- **ケース**：グラフ入り（基準日2026-10-13）、グラフ入り（基準日2026-01-05。当年が1月だけで、当年1月の前月対比が前年12月との比較になり、グラフ用データの2〜12月が値なしになる）、グラフなし（基準日2026-10-13）。対象期間はどれも前年1月1日〜基準日（見通しの前年分 `previousYear` と当年分 `yearStartToBaseDate` をまとめたもの。イベント日設定は日付の条件なし）。
+- **データ**：Kintone REST APIと同じ形（値はすべて文字列）の合成データを作り、実際の出力と同じく `fieldDisplayValue` を通して渡す。店舗名・イベント名は架空。見通しは対象期間の毎日2行（種類2つ）、土日は休日、毎月1日は休業（営業日数0・売上0）。イベント日設定は5ルール（前年の途中で終わる枠、当年に始まる枠、1つの枠に「日」と「日付指定」の2種類）。
+- **ExcelJSでの検査（`npm.cmd test`）**：PL Managementのテストと同じ項目に加え、テンプレートのグラフ（日平均シートの2つ）が出力ファイルの同じシートに残り、グラフのXMLがテンプレートと同一であること。グラフなしのテンプレートの出力には、グラフの部品が無いこと。
+- **Excelでの検査（`npm.cmd run test:sales:excel`、Windows＋Excelが必要）**：出力ファイルをExcelで開いて全再計算し、表示中の帳票シート（日平均）のエラーセルが無いこと、グラフ数（グラフ入りは2、グラフなしは0）を確かめる。
+- **検出できることの確認**：プラグインのグラフを戻す処理（`restoreTemplateCharts`）を外すと、グラフ入りの2ケースが「グラフが出力ファイルに残っていません」で失敗することを確認済み。
+- **検査の修正**：テンプレートの数式が参照する設定シートのセルを調べる検査が、「イベント日設定!A2」（名前が「設定」で終わる別のシート）を設定シートへの参照と取り違えていた。シート名の前に別の文字が続く参照は対象にしないよう直した（`設定!B4`・`'設定'!B6`は引き続き対象）。
+- **運用上の注意**：営業分析側でテンプレートを差し替えた場合（ファイル名を変えた場合、新しい帳票を本番運用に入れた場合など）は、`scripts/sales-template-test.mjs` 冒頭の一覧（`cases`）も合わせて更新する。一覧のファイルが見つからない場合、このテストは失敗する。
+- **このテストで分からないこと**：集計の数値が仕様どおりか（数値の正しさ）は確認しない。それは営業分析側の `outputs/日平均-template/verify/`（合成データの期待値・実出力との全セル照合）で行う。
 
 成果物:
 

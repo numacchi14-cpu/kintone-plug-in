@@ -37,8 +37,8 @@ Kintoneのプラグインは1つのZIP（1プラグインID・1バージョン�
 ### コード変更が避けられない時のガードレール
 
 1. 追加のみ・後方互換のみ。既存の挙動を変えない。新しい列挙値・許可値は型定義だけでなく実行時の許可リスト全箇所を更新する（v0.16.11の教訓）。キー未設定時は既定値へフォールバックする（v0.16.12の方式）。
-2. `scripts/smoke-test.mjs` と `scripts/pl-template-test.mjs`（PL Managementの実テンプレート8本を実際の出力処理に通す回帰テスト）をPL Managementの回帰ネットとして使う。既存のPLシナリオ（単月のISO日付正規化、上半期・下半期の`dateRule`、`<sheetPr>`要素順序、`mergeSourceRanges`、`設定`シートのレイアウトと型など）を壊していないかを毎回確認し、新しい修正には実際の入力経路（JSON文字列パース等）を通る回帰テストを追加する。PL側でテンプレートを差し替えたら、`pl-template-test.mjs`の一覧（`cases`）も更新する。
-3. リリース前に必ず `npm.cmd run typecheck` / `test` / `test:pl:excel` / `test:charts:excel` / `package` を実行する（`test:pl:excel`・`test:charts:excel`は実際のExcelで出力ファイルを開いて全再計算する検査。Windows＋Excelが必要）。
+2. `scripts/smoke-test.mjs` と `scripts/pl-template-test.mjs`（PL Managementの実テンプレート8本を実際の出力処理に通す回帰テスト）をPL Managementの回帰ネットとして使う。既存のPLシナリオ（単月のISO日付正規化、上半期・下半期の`dateRule`、`<sheetPr>`要素順序、`mergeSourceRanges`、`設定`シートのレイアウトと型など）を壊していないかを毎回確認し、新しい修正には実際の入力経路（JSON文字列パース等）を通る回帰テストを追加する。PL側でテンプレートを差し替えたら、`pl-template-test.mjs`の一覧（`cases`）も更新する。営業分析の本番運用中の帳票（日平均）は `scripts/sales-template-test.mjs` で同じように守る（2026-10-14追加。営業分析側でテンプレートを差し替えたら同スクリプトの`cases`も更新する）。検査の中身は両テスト共通の `scripts/lib/template-test-runner.mjs`。
+3. リリース前に必ず `npm.cmd run typecheck` / `test` / `test:pl:excel` / `test:sales:excel` / `test:charts:excel` / `package` を実行する（`test:pl:excel`・`test:sales:excel`・`test:charts:excel`は実際のExcelで出力ファイルを開いて全再計算する検査。Windows＋Excelが必要）。
 4. SemVer・`CHANGELOG.md`・`package.json`／`package-lock.json`／`plugin/manifest.json` のバージョンを揃える。
 5. 新バージョンを実機反映したら、PL Managementの単月・累計・時系列を1回ずつ出力してスポット確認する（厳密には旧帳票との照合）。
 6. PL Managementにリスクがある変更はブランチで作業し、PL回帰＋新プロジェクト両方で検証してからマージする。
@@ -101,11 +101,12 @@ PowerShellでは `npm` ではなく `npm.cmd` を使う。
 npm.cmd run typecheck
 npm.cmd test
 npm.cmd run test:pl:excel
+npm.cmd run test:sales:excel
 npm.cmd run test:charts:excel
 npm.cmd run package
 ```
 
-リリース前に必ず型チェック・テスト（Excelでの検査を含む）・パッケージ作成を実行する。`npm.cmd test` はPL Managementのフォルダ（`C:\Projects\PL Management`、環境変数 `PL_MANAGEMENT_DIR` で変更可）が無い環境では実テンプレートテストをスキップする。パッケージは `dist/kintone-excel-report-plugin-v<version>.zip` に生成される。
+リリース前に必ず型チェック・テスト（Excelでの検査を含む）・パッケージ作成を実行する。`npm.cmd test` はPL Managementのフォルダ（`C:\Projects\PL Management`、環境変数 `PL_MANAGEMENT_DIR` で変更可）・営業分析のフォルダ（`C:\Projects\営業分析`、環境変数 `SALES_ANALYSIS_DIR` で変更可）が無い環境では、それぞれの実テンプレートテストをスキップする。パッケージは `dist/kintone-excel-report-plugin-v<version>.zip` に生成される。
 
 ## 変更時のルール
 
