@@ -1,132 +1,169 @@
-# AGENTS.md
+# AGENTS.md: Kintone Excel帳票出力プラグイン
 
-このファイルは、Codex などのコーディングエージェントがこのリポジトリを扱うときの作業ガイドです。
+このファイルは、このリポジトリで作業するAIエージェント（Codex、Claude Code など）共通の作業指示である。Claude Code は `CLAUDE.md` からこのファイルを読み込む。指示はこのファイルに書き、`CLAUDE.md` には書き足さない。
 
-## 目的
+**このリポジトリはGitHubで公開されている。** 業務情報（実データ、帳票のテンプレート、取得元アプリ設定JSON、接続先、認証情報）は置かない。
 
-kintoneの複数アプリからデータを取得し、Excelテンプレートへ流し込む帳票出力プラグインを開発する。
+## 最初に読むもの
 
-既存Excelの見た目を重視するため、集計シートの数式・書式・レイアウトはExcel側に残し、プラグインは元データ用シートへの値書き込みを担当する。
+1. このファイル（守ること、運用ポリシー、作業のしかた、現在の状態）
+2. [SPEC.md](SPEC.md)（プラグインの設計・互換性・検証手順の正本。版ごとの不具合と修正の詳細もここ）
+3. [CHANGELOG.md](CHANGELOG.md)（版ごとの変更の一覧）
+4. 利用者向けの説明は [README.md](README.md)、取得元アプリ設定JSONの例は [SOURCES_JSON_EXAMPLES.md](SOURCES_JSON_EXAMPLES.md)
 
-## 作業原則
+このファイルと `SPEC.md` が食い違う場合は `SPEC.md` を優先し、作業を終えたら両方を直す。
 
-- APIトークンや認証情報は扱わない
-- `kintone.api()` を使い、ログインユーザー権限で取得する
-- Excel数式の再計算はExcel側に任せる
-- 集計シートは原則変更しない
-- 基準日は通常、実行日の前日を使う。「入力基準日でExcel出力」ボタンではレコードの手入力基準日を使う
-- 期間ルールは取得元全体ではなく、各日付フィルターの `dateRule` に持たせる
-- 変更は既存の責務分割に沿って小さく行う
-- TypeScriptの型チェックとパッケージ作成を確認してから完了する
+## このプラグインの概要
 
-## バージョン運用
+Kintoneの複数アプリからデータを取得し、既存書式のExcelテンプレートの元データ用シートへ書き込んで、`.xlsx` の帳票を出力する。集計の数式・書式・レイアウトはテンプレート側に持ち、プラグインは元データ用シートへの値の書き込みと `設定` シートへの出力条件の書き込みだけを担当する。
 
-- バージョン更新とナンバリングは、変更内容に応じてAIエージェントが判断して行う
-- 原則としてSemVerを目安にする
-  - patch: 不具合修正、小さな文言修正
-  - minor: 後方互換のある機能追加、設定項目追加
-  - major: 既存設定や利用手順に破壊的変更がある場合
-- バージョン更新時は `package.json`、`package-lock.json`、`plugin/manifest.json`、`CHANGELOG.md`、必要に応じてREADME/SPEC内の成果物名を揃える
-- `npm.cmd run package` でバージョン付きzipと最新版zipの両方を確認する
+- テンプレート管理モード（テンプレート管理アプリに適用）: 初期テンプレートの作成、完成版テンプレートの添付、テンプレート検証。
+- 帳票出力モード（帳票出力アプリに適用）: 基準日（通常は実行日の前日、「入力基準日でExcel出力」ではレコードの基準日）から取得元ごとの期間を計算し、Kintoneから取得してExcelを出力する。
+- Kintone APIは `kintone.api()`（ログインユーザー権限）とカーソルAPIで、500件単位で取得する。APIトークンは使わない。
+- テンプレートの `__PL_FORMULA__:=...` は、出力時にExcelの通常の数式へ変換する。出力ブックはExcel起動時に全再計算させる。
+- 完成版テンプレートのワークシートに置いたグラフは、出力ファイルに残す（v0.17.0以降）。
+
+## このプラグインを使っているプロジェクト
+
+業務要件・受入基準・テンプレートは、各プロジェクトのフォルダにある（このリポジトリには置かない）。
+
+| プロジェクト | フォルダ | 帳票 | このリポジトリでの回帰テスト |
+|---|---|---|---|
+| PL Management（Kintone上の損益管理） | `C:\Projects\PL Management` | 単月・累計・時系列（通年・上半期・下半期）の部門別損益計算書 | `scripts/pl-template-test.mjs`（実テンプレート8本） |
+| 営業分析 | `C:\Projects\営業分析` | 日平均（グラフ入り） | `scripts/sales-template-test.mjs`（実テンプレート、3ケース） |
+
+回帰テストは、各プロジェクトのフォルダからテンプレートと取得元アプリ設定JSONを読み込む（コピーしない）。フォルダが無い環境ではスキップする。場所は環境変数 `PL_MANAGEMENT_DIR`・`SALES_ANALYSIS_DIR` で変えられる。
+
+## 必ず守ること
+
+- 実運用のAPIトークン、パスワード、接続先、個人情報、実データを保存・コミットしない。アプリIDなどの環境固有値は、ソースや設定例へ固定しない。
+- 帳票のテンプレートや取得元アプリ設定JSONをこのリポジトリにコピーしない（テストの合成テンプレートは、業務情報を含まないものを `scripts/fixtures/` に置く）。
+- 集計シートの数式をTypeScript側で再現しない（Excelの再計算に任せる）。
+- `SPEC.md`「設定シートの互換性の約束」を変更禁止として扱う。B4〜B6はISO形式の文字列、B7はExcel日付、9行目はテンプレート用でプラグインは書き込まない、10行目以降はA・B列だけが取得元メタデータでC列以降はテンプレート用。
+- 生成済みのExcelやZIPをソース管理に入れない（`dist/` の配布ZIPは動作確認用で、秘密情報を含めない）。
+- 関係のないリファクタリングを混ぜない。変更は既存の責務分割に沿って小さく行う。
+- Kintoneへのプラグインの反映、Kintoneアプリの設定、実機での出力はユーザーが行う。
+
+## 運用ポリシー: 複数プロジェクトでの共用と改修時の影響範囲
+
+### 原則: 新しい帳票の追加はコード変更なしで行う
+
+このプラグインは設定駆動である。新しい帳票は、次をKintone側で用意すれば足り、TypeScriptのコードは変えない。
+
+- テンプレート管理レコード（`report_id`）
+- 取得元アプリ設定JSON（`sources_json`）
+- 完成版Excelテンプレートの添付
+- 必要なら専用の帳票出力アプリ
+
+### 構造上のリスク: プラグインは1本、適用先アプリは複数
+
+Kintoneのプラグインは1つのZIP（1プラグインID・1バージョン）を複数アプリへ適用している。
+
+- **設定（`kintone.plugin.app.getConfig()`）はアプリごとに独立**。あるプロジェクトの設定を変えても、ほかのプロジェクトの設定には影響しない。
+- **コードは全アプリ共通**。プラグイン管理画面で新しい版へ更新すると、その時点ですべてのプロジェクトのアプリが新しいコードで動く。あるプロジェクト向けにコードを1行でも変えて反映すれば、ほかのプロジェクトも同時に新しいコードになる。
+- **各プロジェクトのテンプレートは、プラグインが書き込む `設定` シートのセル位置・型に依存している**（上の「設定シートの互換性の約束」）。
+
+### コード変更が避けられない時のガードレール
+
+1. 追加のみ・後方互換のみ。既存の挙動を変えない。新しい列挙値・許可値は、型定義だけでなく実行時の許可リストもすべて更新する（v0.16.11の教訓）。キー未設定時は既定値へフォールバックする（v0.16.12の方式）。
+2. `scripts/smoke-test.mjs`、`scripts/pl-template-test.mjs`、`scripts/sales-template-test.mjs`、`scripts/chart-template-test.mjs` を回帰ネットとして使う。新しい修正には、実際の入力経路（JSON文字列のパースなど）を通る回帰テストを追加する。各プロジェクトでテンプレートを差し替えたら、各テストの一覧（`cases`）も更新する。検査の中身は共通の `scripts/lib/template-test-runner.mjs`。
+3. リリース前に必ず `npm.cmd run typecheck` / `test` / `test:pl:excel` / `test:sales:excel` / `test:charts:excel` / `package` を実行する（`:excel` の付くものは、実際のExcelで出力ファイルを開いて全再計算する検査。WindowsとExcelが必要）。
+4. SemVerに従い、`CHANGELOG.md`・`package.json`・`package-lock.json`・`plugin/manifest.json` のバージョンを揃える（patch: 不具合修正・小さな文言修正、minor: 後方互換のある機能追加・設定項目追加、major: 既存の設定や利用手順を壊す変更）。
+5. 新しい版をKintoneへ反映したら、PL Managementの単月・累計・時系列を1回ずつ出力してスポット確認する（ユーザー作業。出力ファイルをもらえれば、Excelで開いてエラーセルと出力年月日を確認する）。変更のきっかけになったプロジェクトの帳票も出力して確かめる。
+6. 既存のプロジェクトにリスクがある変更は、ブランチで作業し、プルリクエストで `main` へマージする。各プロジェクトの回帰テストと、新しい用途の両方で確かめてからマージする。
+
+### 最終手段: プラグインを分離する
+
+本当にリスクの高い改修が必要な場合は、新しい署名鍵で別のプラグインIDとしてもう1本デプロイし、既存のプロジェクトのプラグインを凍結する。維持対象が2本になる代償があるため、まずは上のガードレールで回し、これは切り札として置く。
 
 ## アーキテクチャ
 
 ```text
 src/
-  desktop.ts              kintoneレコード画面の処理
-  config.ts               プラグイン設定画面の処理
+  desktop.ts              レコード詳細画面・一覧画面の出力UI、テンプレート管理画面の補助
+  config.ts               プラグイン設定画面
   shared/
-    config.ts             設定のparse/serialize
-    dateRules.ts          基準日・期間ルール
+    config.ts             設定JSONの解析・保存（実行時の許可リストもここ）
+    dateRules.ts          基準日・期間ルール、出力日時の書き込み値
     defaults.ts           初期設定
-    excel.ts              Excel生成・編集
-    kintoneApi.ts         kintone API処理
+    excel.ts              Excelの読み込み・元データの書き込み・数式変換・自動再計算・<sheetPr>の順序補正
+    charts.ts             テンプレートのグラフをExcelJSの前に外し、出力後に戻す（v0.17.0）
+    kintoneApi.ts         Kintoneのクエリ、カーソルAPI、取得元ごとの期間計算
     types.ts              共通型
+public/config.html        設定画面（説明書を含む）
+plugin/manifest.json      マニフェストとバージョン
+scripts/
+  build.mjs / build-plugin.mjs        ビルド、プラグインZIPの作成
+  smoke-test.mjs                      単体・回帰テスト
+  pl-template-test.mjs                PL Managementの実テンプレートの回帰テスト
+  sales-template-test.mjs             営業分析の実テンプレートの回帰テスト
+  chart-template-test.mjs             グラフ入りテンプレートのテスト（合成テンプレートは fixtures/）
+  lib/template-test-runner.mjs        実テンプレートテストの共通の検査
 ```
 
-## モード
+変更する場所の目安:
 
-### テンプレート管理モード
+- 期間ルールを増やす: `src/shared/dateRules.ts`（`calculateDateRange`）と、`src/shared/config.ts` の実行時の許可リスト、設定画面のプルダウン
+- Excelの書き込みを変える: `src/shared/excel.ts`
+- Kintoneの取得条件・カーソルAPIを変える: `src/shared/kintoneApi.ts`
+- 設定項目を増やす: `src/shared/types.ts`、`src/shared/defaults.ts`、`src/shared/config.ts`、`src/config.ts`、`public/config.html`
+- マニフェストや同梱ファイル: `plugin/manifest.json`、`scripts/build-plugin.mjs`
+- 取得元アプリ設定JSONは `filters`（抽出条件）と `sorts`（並び順）の配列だけを正式仕様とする。旧形式（`periodRule`、`additionalQuery`、`valueFrom: "period"` など）は互換対応しない。
 
-テンプレート管理アプリに適用する。
+## 開発・検証コマンド
 
-現在の主機能:
-
-- 初期Excelテンプレート作成
-- 設定シート、元データ用シート、集計シートの生成
-
-### 帳票出力モード
-
-帳票出力アプリに適用する。
-
-現在の主機能:
-
-- 帳票種類、店舗をレコードから取得し、基準日は出力時に実行日の前日として確定
-- テンプレート管理アプリから完成版Excelを取得
-- 取得元アプリの日付フィルターごとに期間計算
-- テンプレート管理レコード側の取得元アプリ設定JSON取得
-- kintoneレコード取得
-- Excel元データ用シートへ書き込み
-- `.xlsx` ダウンロード
-
-## 開発コマンド
-
-PowerShell環境では `npm.cmd` を優先する。
+PowerShellでは `npm` ではなく `npm.cmd` を使う。
 
 ```powershell
 npm.cmd run typecheck
 npm.cmd test
+npm.cmd run test:pl:excel
+npm.cmd run test:sales:excel
+npm.cmd run test:charts:excel
 npm.cmd run package
 ```
 
-`npm.cmd run package` は以下を行う。
+- パッケージは `dist/kintone-excel-report-plugin-v<version>.zip`（履歴用）と `dist/kintone-excel-report-plugin.zip`（最新版）に生成される。
+- `kintone-plugin-packer` が `homepage_url.ja` / `homepage_url.en` 未設定の警告を出すことがある。ZIPが生成されていれば許容。
+- Excelを使う検査は、WindowsとExcelが必要。使えない環境（クラウドのサンドボックスなど）では実行していないことをはっきり報告し、Excelが使える環境での実行を残作業にする。
 
-- Viteで `desktop.js` と `config.js` を生成
-- `plugin-package/` にkintoneプラグイン構成を配置
-- `dist/kintone-excel-report-plugin.zip` を生成
+## 変更時のルール
 
-## 変更時の目安
+- `SPEC.md` と `CHANGELOG.md`、必要ならこのファイルの「現在の状態」へ、変更理由・影響するプロジェクトと帳票・確認方法・残作業を、同じ変更単位で記録する。利用者向けの手順が変わるなら `README.md` と `public/config.html` の説明書も直す。
+- 日付はExcel上で日付型として扱う。文字列の日付を式の比較・集計条件に渡さない。
+- ExcelJSは `Date` をUTCとしてシリアル値にする。Excelへ書く日付・日時は `Date.UTC` で組み立てる（v0.16.5・v0.16.14の教訓）。Kintoneの日時フィールドへ書く値はタイムゾーン付きのISO 8601にする（そうしないと `CB_VA01`）。
+- ExcelJSはグラフを書き出せない。ExcelJSを経由しない部品は、JSZipで外して戻す方式にする（`charts.ts`）。グラフのないテンプレートでは処理を通さず、出力を変えない。
+- ExcelJSは `<sheetPr>` の子要素の順序を崩すことがある（v0.16.9でファイルが開けなくなった）。出力の後処理の順序補正を外さない。
+- Kintoneのドロップダウン型フィールドの条件は `=` ではなく `in` を使う（`=` だと `GAIA_IQ03`）。
+- 金額は円で取得・計算し、帳票の書式でのみ千円表示・`△`表示にする。
+- 出力テンプレートの見た目・セル結合・数値書式を壊さない。ExcelJSで読めることと、Excelで警告なしに開けることを確かめる。
 
-- 作業開始前に`git push`でoriginへ退避する。ローカルブランチが未プッシュ・未マージのまま長期間残ることがあるため（2026-08-12のClaude Code精査で`agent/documentation-status`が9コミット未プッシュ・`main`未マージだったことを確認、詳細は`SPEC.md`の「Claude Codeによる精査（2026-08-12）」参照）。
-- 相談済みの今後実装する内容は `SPEC.md` の「今後の拡張候補」と「次の実装順」を正とする
-- PL Management案件を継続する場合は、先に `SPEC.md` の「PL Management 導入・引継ぎ状況」を確認する。帳票ID、テンプレート、検証済み範囲、残作業をここで引き継ぐ
-- PL案件の帳票設定を変更した場合は、完成版テンプレート、取得元アプリ設定JSON、`SPEC.md` の引継ぎ状況を同じ変更単位で更新する。環境固有のアプリID・接続先・認証情報は書かない
-- 単月帳票のフィルターで `aggregation_status` を指定する場合は、Kintoneのドロップダウン仕様に合わせて演算子を `in` にする。`=` は `GAIA_IQ03` になる
-- 期間ルールを増やす場合: `src/shared/dateRules.ts`
-- Excelシート書き込みを変える場合: `src/shared/excel.ts`
-- kintoneの取得条件やカーソルAPI処理を変える場合: `src/shared/kintoneApi.ts`
-- 設定項目を増やす場合:
-  - `src/shared/types.ts`
-  - `src/shared/defaults.ts`
-  - `src/shared/config.ts`
-  - `src/config.ts`
-  - `public/config.html`
-- 帳票ごとの取得元アプリ設定JSONを変える場合: テンプレート管理アプリの `sources_json`
-- 取得元アプリ設定JSONの利用者向けサンプル: `SOURCES_JSON_EXAMPLES.md`
-- テンプレート管理レコード追加/編集画面には、複数取得元アプリ対応のJSON簡易生成UIがある
-- テンプレート管理アプリでは紐づく帳票出力アプリIDを設定し、抽出条件で出力アプリの任意フィールドを参照できる
-- 簡易生成UIは、アプリIDからフィールド定義を取得し、型推定、選択、削除、上下移動ができる
-- 抽出条件は `filters`、並び順は `sorts` の配列だけを正式仕様として扱う
-- 旧 `periodRule` / `additionalQuery` / `valueFrom: "period"` は互換対応せず、簡易生成UIで作り直す
-- manifestや同梱ファイルを変える場合: `plugin/manifest.json` と `scripts/build-plugin.mjs`
+## 分担のしかた（複数のエージェントで作業するとき）
 
-## 検証
+- 1つの作業（1つの不具合修正・機能追加）は、1つのエージェントが1つのブランチで担当する。ブランチ名は `agent/<内容>`。終わったらプルリクエストで `main` へマージし、マージ後はブランチを消す。
+- 作業を始める前に `git pull` で最新の `main` を取り込む。ほかのエージェントが同じ時期に `main` へコミットしていることがある。作業の区切りでpushし、未pushのブランチを長く残さない（2026-08-12に、未pushの作業ブランチが9コミット残っていたことがある）。
+- `SPEC.md`・`CHANGELOG.md`・このファイルは共有の文書なので、更新の直前に読み直し、ほかのエージェントの変更を消さない。
+- 各プロジェクトのフォルダ（テンプレート、業務の仕様）は、そのプロジェクトの担当が変更する。このリポジトリの作業からは、読む・テストで使うだけにする。プロジェクトの文書（`SPEC.md`・`AGENTS.md`）に影響がある場合は、その内容を報告に書き、プロジェクト側の担当（またはユーザー）に引き継ぐ。
+- Kintoneへの反映・実機確認はユーザーが行う。反映が必要な版ができたら、反映後に確かめること（ガードレール5）を報告に書く。
 
-最低限、以下を実行する。
+## 現在の状態（2026-10-14）
 
-```powershell
-npm.cmd run typecheck
-npm.cmd test
-npm.cmd run package
-```
+- 現行版: **v0.17.0**（2026-10-14にKintoneへ反映、実機確認済み・受入完了）。テンプレートのグラフを出力ファイルへ残す機能（`charts.ts`）。グラフのないテンプレート（PL Managementの8本）の出力は、変更前とバイト単位で同じことを確認した。プルリクエスト numacchi14-cpu/kintone-plug-in#1 で `main` へマージ。
+- 前の版: v0.16.14（同日）。出力日時の不具合2件（日時型フィールドへの書き戻しが `CB_VA01` になる、`設定!B7` が9時間早い）を修正。v0.16.13以前の経緯は `CHANGELOG.md` と `SPEC.md` の各節。
+- ブランチは `main` だけ。
+- PL Management: 単月・累計は旧帳票との全セル照合で差異0件、実Kintone環境での出力確認も完了。時系列（通年・上半期・下半期）を含め実務で使われている。詳細は `SPEC.md`「PL Management 導入・引継ぎ状況」以降。
+- 営業分析: 日平均（グラフ入り）が運用中。実テンプレートを回帰テストに追加済み（`sales-template-test.mjs`）。業務側の検証は `C:\Projects\営業分析` の `SPEC.md`。
 
-既知の警告:
+## 残っていること
 
-- `kintone-plugin-packer` が `homepage_url.ja` / `homepage_url.en` 未設定の警告を出すことがある。zip生成が成功していれば現時点では許容。
+- v0.16.13以降で出力したPL帳票について、旧帳票との全セル照合はしていない（実務では問題なく使われている。厳密な照合が必要になったら実施する）。
+- 時系列テンプレート（空港店版）のA1タイトルの修正版を、テンプレート管理アプリへ登録したかは未確認。上半期・下半期が実務で出力できていることから対応済みとみられる。確認するときは `C:\Projects\PL Management\SPEC.md`「時系列損益計算書の上半期・下半期出力対応」を見る。
+- 運用上の申し送り: テンプレートを差し替えるときは、添付したファイルを毎回確かめる（過去に、累計の出力で単月のテンプレートが添付されたままだったことがある）。
 
-## 禁止事項
+## 作業後に更新する文書
 
-- 実運用のAPIトークン、パスワード、個人情報、実データを保存しない
-- 集計シートの数式をTypeScript側で再現しようとしない
-- unrelatedなリファクタリングを混ぜない
-- 生成済みExcelやzipをソース管理対象にしない
+- 設計・互換性・検証結果: `SPEC.md`
+- 版ごとの変更: `CHANGELOG.md`
+- 現在の状態・残っていること: このファイル
+- 利用者向けの手順: `README.md`、`public/config.html`
+- プロジェクト側に影響がある場合: そのプロジェクトの `SPEC.md`・`AGENTS.md`（プロジェクトの担当へ引き継ぐ）
