@@ -788,7 +788,7 @@ dist/kintone-excel-report-plugin-v<version>.zip
 dist/kintone-excel-report-plugin.zip
 ```
 
-`<version>` は `plugin/manifest.json` のバージョン（2026-10-14時点のKintone反映済みの版は `v0.16.14`。`v0.17.0` は同日作成、未反映）。
+`<version>` は `plugin/manifest.json` のバージョン（2026-10-14時点の現行版は `v0.17.0`。同日Kintoneへ反映済み）。
 
 バージョン付きzipは履歴確認用、バージョンなしzipは最新版用。どちらも同じ内容。
 
@@ -1146,7 +1146,7 @@ ExcelJSには手を入れず、前後の処理をJSZipで追加した。
 
 - `npm.cmd run typecheck`／`npm.cmd test`（smoke・PL実テンプレート・グラフ）／`npm.cmd run test:pl:excel`／`npm.cmd run test:charts:excel`／`npm.cmd run package`すべて成功。
 - 営業分析の日平均の完成版テンプレート（openpyxlで置いたグラフ2つ）のコピーを、取得データ0件で`fillReportTemplate`に通し、Excelで開いて`日平均`シートのグラフが2つ（参照先`集計!$U$2:$AF$2`・`集計!$U$4:$AF$4`）あることを確認した。実データでの確認は営業分析側で行う。
-- **残作業**：ユーザーがKintoneへ反映する。反映後、`CLAUDE.md`のガードレール5のとおりPL Managementの単月・累計・時系列を1回ずつ出力してスポット確認し、営業分析の出力アプリ167で日平均を出力してグラフが表示されることを確認する。
+- **実機確認（2026-10-14、ユーザーがKintoneへ反映して確認、問題なし。受入完了）**：(1) `CLAUDE.md`のガードレール5のとおり、PL Managementの単月・累計・時系列を1回ずつ出力してスポット確認。(2) 営業分析の出力アプリ167で日平均を出力し、グラフが表示されること。プルリクエスト: numacchi14-cpu/kintone-plug-in#1（`agent/template-charts` → `main`）。
 
 ## 既知の制約
 
