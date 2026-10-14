@@ -926,7 +926,7 @@ Excel COM自動化（PowerShellから`New-Object -ComObject Excel.Application`�
 
 - `npm.cmd run typecheck` / `npm.cmd test` は現行ブランチで成功、作業ツリーもクリーンであることを確認した。
 - 単月の日付不具合（上記「単月の日付不具合とv0.16.5での修正」）はコード（`src/shared/excel.ts`の`normalizeCellValue`/`normalizeDateTimeValue`）を直接確認し、精査時点では未修正であることを確認した（同日中にv0.16.5で修正し、実出力でも検証済み）。
-- **解消済み（2026-08-13確認）**: 直近のv0.16.x一連の作業（2026-08-01以降）は当時ローカルブランチ`agent/documentation-status`上に未プッシュで残っていたが、その後のセッションで`origin/agent/documentation-status`へプッシュ済みとなり、`main`ブランチも`agent/documentation-status`と同一コミット（`0801a0c`）まで進んでいることを確認した。ローカル`main`・`origin/main`・`agent/documentation-status`（ローカル・リモートとも）はすべて同じコミットを指しており、作業内容の消失リスクはない。working treeもクリーン。
+- **解消済み（2026-08-13確認）**: 直近のv0.16.x一連の作業（2026-08-01以降）は当時ローカルブランチ`agent/documentation-status`上に未プッシュで残っていたが、その後のセッションで`origin/agent/documentation-status`へプッシュ済みとなり、`main`ブランチも`agent/documentation-status`と同一コミット（`0801a0c`）まで進んでいることを確認した。ローカル`main`・`origin/main`・`agent/documentation-status`（ローカル・リモートとも）はすべて同じコミットを指しており、作業内容の消失リスクはない。working treeもクリーン。2026-10-14、`agent/documentation-status`はローカル・originとも削除した（内容はすべて`main`に含まれる）。
 
 ### 単月・累計テンプレートのA1タイトル不具合修正（2026-08-13、テンプレート直接編集・プラグイン改修なし）
 
@@ -1146,7 +1146,7 @@ ExcelJSには手を入れず、前後の処理をJSZipで追加した。
 
 - `npm.cmd run typecheck`／`npm.cmd test`（smoke・PL実テンプレート・グラフ）／`npm.cmd run test:pl:excel`／`npm.cmd run test:charts:excel`／`npm.cmd run package`すべて成功。
 - 営業分析の日平均の完成版テンプレート（openpyxlで置いたグラフ2つ）のコピーを、取得データ0件で`fillReportTemplate`に通し、Excelで開いて`日平均`シートのグラフが2つ（参照先`集計!$U$2:$AF$2`・`集計!$U$4:$AF$4`）あることを確認した。実データでの確認は営業分析側で行う。
-- **実機確認（2026-10-14、ユーザーがKintoneへ反映して確認、問題なし。受入完了）**：(1) `CLAUDE.md`のガードレール5のとおり、PL Managementの単月・累計・時系列を1回ずつ出力してスポット確認。(2) 営業分析の出力アプリ167で日平均を出力し、グラフが表示されること。プルリクエスト: numacchi14-cpu/kintone-plug-in#1（`agent/template-charts` → `main`）。
+- **実機確認（2026-10-14、ユーザーがKintoneへ反映して確認、問題なし。受入完了）**：(1) `CLAUDE.md`のガードレール5のとおり、PL Managementの単月・累計・時系列を1回ずつ出力してスポット確認。(2) 営業分析の出力アプリ167で日平均を出力し、グラフが表示されること。プルリクエスト: numacchi14-cpu/kintone-plug-in#1（`agent/template-charts` → `main`、2026-10-14マージ。作業ブランチはマージ後に削除）。
 
 ## 既知の制約
 
