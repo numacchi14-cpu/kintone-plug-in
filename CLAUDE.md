@@ -38,7 +38,7 @@ Kintoneのプラグインは1つのZIP（1プラグインID・1バージョン�
 
 1. 追加のみ・後方互換のみ。既存の挙動を変えない。新しい列挙値・許可値は型定義だけでなく実行時の許可リスト全箇所を更新する（v0.16.11の教訓）。キー未設定時は既定値へフォールバックする（v0.16.12の方式）。
 2. `scripts/smoke-test.mjs` と `scripts/pl-template-test.mjs`（PL Managementの実テンプレート8本を実際の出力処理に通す回帰テスト）をPL Managementの回帰ネットとして使う。既存のPLシナリオ（単月のISO日付正規化、上半期・下半期の`dateRule`、`<sheetPr>`要素順序、`mergeSourceRanges`、`設定`シートのレイアウトと型など）を壊していないかを毎回確認し、新しい修正には実際の入力経路（JSON文字列パース等）を通る回帰テストを追加する。PL側でテンプレートを差し替えたら、`pl-template-test.mjs`の一覧（`cases`）も更新する。
-3. リリース前に必ず `npm.cmd run typecheck` / `test` / `test:pl:excel` / `package` を実行する（`test:pl:excel`は実際のExcelで出力ファイルを開いて全再計算する検査。Windows＋Excelが必要）。
+3. リリース前に必ず `npm.cmd run typecheck` / `test` / `test:pl:excel` / `test:charts:excel` / `package` を実行する（`test:pl:excel`・`test:charts:excel`は実際のExcelで出力ファイルを開いて全再計算する検査。Windows＋Excelが必要）。
 4. SemVer・`CHANGELOG.md`・`package.json`／`package-lock.json`／`plugin/manifest.json` のバージョンを揃える。
 5. 新バージョンを実機反映したら、PL Managementの単月・累計・時系列を1回ずつ出力してスポット確認する（厳密には旧帳票との照合）。
 6. PL Managementにリスクがある変更はブランチで作業し、PL回帰＋新プロジェクト両方で検証してからマージする。
@@ -49,7 +49,8 @@ Kintoneのプラグインは1つのZIP（1プラグインID・1バージョン�
 
 ## PL Managementの現行状態（2026-10-14更新）
 
-- 現行リリース: **v0.16.14（2026-10-14作成、同日ユーザーがKintoneへ反映し実機確認済み）**。出力日時の不具合2件の修正。(1) 出力アプリの「出力日時フィールドコード」に日時型フィールドを指定すると出力履歴の保存が`CB_VA01`で失敗していた（タイムゾーンなしの文字列を送っていた）。書き込み先の型をレコードから判定し、日時型ならUTC（`Z`付き）、日付型なら`yyyy-mm-dd`、それ以外は従来どおりの文字列を送る（`src/shared/dateRules.ts`の`exportedAtFieldValue`）。(2) `設定!B7`（出力日）が9時間早く書き込まれ、0:00〜8:59（JST）の出力ではPLテンプレートの出力年月日が前日になっていた。`normalizeDateTimeValue`を`Date.UTC`で組み立てるよう修正（型はExcel日付のまま、B4〜B6・レイアウトは変更なし）。営業分析の日平均テスト（出力アプリ167）で発見。PL 8テンプレートのB7参照はすべて`TEXT(...,"ggge年m月d日")`（日付のみ）で、9:00以降の出力では表示は変わらない。`typecheck`／`test`／`test:pl:excel`／`package`成功。配布ZIP: `dist/kintone-excel-report-plugin-v0.16.14.zip`。**2026-10-14、実機確認完了（ユーザー確認、問題なし）**：営業分析167で出力日時フィールドコードを日時型の`exported_at`に戻して出力しエラーなし・出力日時が正しい時刻、出力ファイルの`設定!B7`が出力時刻、ガードレール5のPL単月・累計・時系列のスポット確認（出力年月日が当日、正常に開ける）。受入完了。詳細は`SPEC.md`「出力日時の不具合2件（v0.16.14、2026-10-14）」。
+- **作成済み・未反映: v0.17.0（2026-10-14）**。完成版テンプレートに置いたグラフを出力ファイルへ残す機能追加（営業分析の日平均帳票のグラフのため）。ExcelJSはグラフを書き出せず（出力からグラフが消える）、openpyxlで置いたグラフは読み込みで例外になる（openpyxlの描画XMLが接頭辞なしの名前空間のため）。`src/shared/charts.ts`で、ExcelJSへ渡す前にグラフを含む描画をシートから外し（`extractTemplateCharts`、`loadTemplateWorkbook`から呼ぶ）、出力後にテンプレートの描画・グラフ・スタイル・色の部品を同名シートへ戻す（`restoreTemplateCharts`、既存の後処理の後）。グラフと画像を同じシートに置いたテンプレートはエラー。**グラフのないテンプレート（PLの8本）は何も変わらない**：変更前後の出力ファイル全200部品がバイト単位で一致することを確認した。テスト`scripts/chart-template-test.mjs`（`npm test`に追加、Excelでの検査は`npm.cmd run test:charts:excel`）と合成テンプレート`scripts/fixtures/`を追加。`typecheck`／`test`／`test:pl:excel`／`test:charts:excel`／`package`成功。配布ZIP: `dist/kintone-excel-report-plugin-v0.17.0.zip`。**残作業**：ユーザーがKintoneへ反映 → ガードレール5（PL単月・累計・時系列のスポット確認）→ 営業分析167で日平均を出力しグラフ表示を確認。詳細は`SPEC.md`「テンプレートのグラフを出力ファイルへ残す機能追加（v0.17.0、2026-10-14）」。
+- 現行リリース（Kintone反映済み）: **v0.16.14（2026-10-14作成、同日ユーザーがKintoneへ反映し実機確認済み）**。出力日時の不具合2件の修正。(1) 出力アプリの「出力日時フィールドコード」に日時型フィールドを指定すると出力履歴の保存が`CB_VA01`で失敗していた（タイムゾーンなしの文字列を送っていた）。書き込み先の型をレコードから判定し、日時型ならUTC（`Z`付き）、日付型なら`yyyy-mm-dd`、それ以外は従来どおりの文字列を送る（`src/shared/dateRules.ts`の`exportedAtFieldValue`）。(2) `設定!B7`（出力日）が9時間早く書き込まれ、0:00〜8:59（JST）の出力ではPLテンプレートの出力年月日が前日になっていた。`normalizeDateTimeValue`を`Date.UTC`で組み立てるよう修正（型はExcel日付のまま、B4〜B6・レイアウトは変更なし）。営業分析の日平均テスト（出力アプリ167）で発見。PL 8テンプレートのB7参照はすべて`TEXT(...,"ggge年m月d日")`（日付のみ）で、9:00以降の出力では表示は変わらない。`typecheck`／`test`／`test:pl:excel`／`package`成功。配布ZIP: `dist/kintone-excel-report-plugin-v0.16.14.zip`。**2026-10-14、実機確認完了（ユーザー確認、問題なし）**：営業分析167で出力日時フィールドコードを日時型の`exported_at`に戻して出力しエラーなし・出力日時が正しい時刻、出力ファイルの`設定!B7`が出力時刻、ガードレール5のPL単月・累計・時系列のスポット確認（出力年月日が当日、正常に開ける）。受入完了。詳細は`SPEC.md`「出力日時の不具合2件（v0.16.14、2026-10-14）」。
 - 前回のリリース: **v0.16.13**（2026-08-16作成、**2026-08-18頃にKintoneのプラグイン管理画面へ反映済み**。2026-10-14にv0.16.14へ更新）。2026-09-08時点で約3週間の実務稼働実績があり、単月・累計・時系列（通年・上半期・下半期）がいずれも実務で出力・使用されている（ユーザー確認、問題報告なし）。v0.16.13はv0.16.11のコードを含む累積版のため、v0.16.8〜v0.16.11の未検証だった修正（時系列上半期・下半期のdateRule許可リスト漏れ、`mergeSourceRanges`、`<sheetPr>`要素順序によるファイル破損）も実地で有効に機能していることが稼働実績で裏付けられた。ただしv0.16.13稼働後の帳票について旧帳票との全セル照合は未実施。
 - 配布ZIP: `dist/kintone-excel-report-plugin-v0.16.13.zip`
 - **v0.16.13（2026-08-16）**：選択欄の表示項目に「帳票名」を追加した。帳票出力アプリに帳票名（分かりやすい名称）フィールドがある場合、プラグイン設定の「帳票名フィールドコード」に指定すると選択欄へ表示できる（未設定なら表示しない、既存の出力アプリは無変更で動く）。v0.16.12直後のユーザー追加要望への対応。**2026-08-16、ユーザーが実機で確認済み**（実際のフィールドはルックアップ型だったが問題なく表示された）。v0.16.12・v0.16.13とも受入完了。
@@ -83,6 +84,7 @@ Kintoneのプラグインは1つのZIP（1プラグインID・1バージョン�
 - `src/desktop.ts`: レコード詳細画面・一覧画面の出力UI
 - `src/config.ts`: プラグイン設定画面
 - `src/shared/excel.ts`: Excel読込・取得データの書込・数式変換・自動再計算指定
+- `src/shared/charts.ts`: テンプレートのグラフをExcelJSの前に外し、出力後に戻す（v0.17.0）
 - `src/shared/kintoneApi.ts`: KintoneクエリとカーソルAPI
 - `src/shared/dateRules.ts`: 基準日・期間条件
 - `src/shared/config.ts`: 設定JSONの解析・保存
@@ -99,6 +101,7 @@ PowerShellでは `npm` ではなく `npm.cmd` を使う。
 npm.cmd run typecheck
 npm.cmd test
 npm.cmd run test:pl:excel
+npm.cmd run test:charts:excel
 npm.cmd run package
 ```
 
@@ -111,6 +114,7 @@ npm.cmd run package
 - 生成済みZIPは動作確認用であり、秘密情報を含めない。
 - 日付はExcel上で日付型として扱う。文字列の日付を式の比較・集計条件に渡さない。
 - 出力テンプレートの見た目・セル結合・数値書式を壊さない。ExcelJSで読めることと、Excelで警告なしに開けることを確認する。
+- ExcelJSはグラフを書き出せない。ExcelJSを経由しない部品（グラフなど）は、JSZipで外して戻す方式にする（v0.17.0の`charts.ts`）。グラフのないテンプレートでは処理を通さず、PLの出力を変えない。
 - Kintoneのドロップダウン条件は `=` ではなく `in` を使用する。`aggregation_status` を `=` で検索すると `GAIA_IQ03` になる。
 - 金額は円で取得・計算し、帳票の書式でのみ千円表示・`△`表示にする。
 - ExcelJSは`Date`をUTCとしてシリアル値にする。Excelへ書く日付・日時は`Date.UTC`で組み立てる（v0.16.5・v0.16.14の教訓）。Kintoneの日時フィールドへ書く値はタイムゾーン付きのISO 8601にする（`CB_VA01`になる）。

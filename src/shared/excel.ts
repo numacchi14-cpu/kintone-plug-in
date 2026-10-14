@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
+import { extractTemplateCharts, restoreTemplateCharts, type TemplateCharts } from './charts';
 import type { PluginConfig, ReportContext, SourceAppConfig, SourceRows } from './types';
 
 const settingsSheetName = '設定';
@@ -53,7 +54,7 @@ export async function createInitialTemplate(config: PluginConfig, reportName: st
 }
 
 export async function fillReportTemplate(templateBuffer: ArrayBuffer, context: ReportContext, sourceRows: SourceRows[]): Promise<ArrayBuffer> {
-  const workbook = await loadTemplateWorkbook(templateBuffer);
+  const { workbook, charts } = await loadTemplateWorkbook(templateBuffer);
   workbook.calcProperties.fullCalcOnLoad = true;
   workbook.modified = new Date();
 
@@ -67,11 +68,12 @@ export async function fillReportTemplate(templateBuffer: ArrayBuffer, context: R
   materializeTemplateFormulas(workbook);
   hideTechnicalSheets(workbook, sourceRows);
 
-  return fixSheetPrElementOrder(await ensureAutomaticRecalculation(await workbook.xlsx.writeBuffer()));
+  const outputBuffer = await fixSheetPrElementOrder(await ensureAutomaticRecalculation(await workbook.xlsx.writeBuffer()));
+  return restoreTemplateCharts(outputBuffer, charts);
 }
 
 export async function validateReportTemplate(templateBuffer: ArrayBuffer, sources: SourceAppConfig[]): Promise<void> {
-  const workbook = await loadTemplateWorkbook(templateBuffer);
+  const { workbook } = await loadTemplateWorkbook(templateBuffer);
 
   validateTemplateWorkbook(
     workbook,
@@ -85,14 +87,16 @@ export async function validateReportTemplate(templateBuffer: ArrayBuffer, source
   );
 }
 
-async function loadTemplateWorkbook(templateBuffer: ArrayBuffer): Promise<ExcelJS.Workbook> {
+// ExcelJSはグラフを読み書きできないため、グラフを含む描画は外してから読み込み、出力時に戻す（charts.ts）。
+async function loadTemplateWorkbook(templateBuffer: ArrayBuffer): Promise<{ workbook: ExcelJS.Workbook; charts: TemplateCharts }> {
+  const { buffer, charts } = await extractTemplateCharts(templateBuffer);
   const workbook = new ExcelJS.Workbook();
   try {
-    await workbook.xlsx.load(templateBuffer);
+    await workbook.xlsx.load(buffer);
   } catch {
     throw new Error('完成版テンプレートExcelを読み込めません。xlsx形式か確認してください。');
   }
-  return workbook;
+  return { workbook, charts };
 }
 
 export function downloadWorkbook(buffer: ArrayBuffer, fileName: string): void {
